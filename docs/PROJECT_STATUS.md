@@ -2,12 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.1.1 (local working tree, **not committed, not deployed**). Live site serves 0.1.0. |
-| Current branch | `main`; `origin/main` = `a741326` (0.1.0) |
+| Current version | 0.1.1 (deployed as test build) |
+| Current branch | `main` = `origin/main` (PA-006B commit `12be0f5` + this status update) |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
-| Test deployment | https://bisbiliroglu.github.io/psstamigo/ (0.1.0) |
+| Test deployment | https://bisbiliroglu.github.io/psstamigo/ (0.1.1) |
 | Current task | PA-006B — Group stability, privacy review & deployment readiness |
-| Task status | REVIEW — fixes implemented and verified locally; waiting for commit/push approval |
+| Task status | REVIEW — deployed and verified live; manual tests pending |
 | Last update | 2026-11-25 |
 
 Note: the PA-006B task brief listed the deployed version as 0.0.2; the repository shows 0.1.0 was already deployed (user-approved,
@@ -19,7 +19,7 @@ commits `5308393`, `a741326`).
 
 ## In progress / review
 
-- PA-006B — REVIEW (0.1.1 local)
+- PA-006B — REVIEW (0.1.1 live)
 - PA-006 — REVIEW (0.1.0 live)
 - PA-015 — REVIEW (0.1.0 live)
 - PA-001 … PA-005, PA-007, PA-008 — REVIEW (see ROADMAP remaining criteria)
@@ -61,7 +61,11 @@ commits `5308393`, `a741326`).
   low-bandwidth mode about 11.2–11.4 kbps per stream (cap 16 kbps). Human voice quality not verified.
 - Vanished-peer detection (abrupt context close, Chromium): media "ses kesintide" after about 10 s, "ses yok" about 20 s, member
   removed about 36 s.
-- Not run: GitHub Actions for 0.1.1 (no push), live smoke test for 0.1.1, manual tests.
+- GitHub Actions on `12be0f5`: deploy workflow **success**; browser-test workflow **13 / 13 passed** (CI measured: normal
+  about 21.9 kbps, low-bandwidth about 11.4–11.5 kbps per stream; vanished peer removed after about 36 s).
+- Live smoke test 0.1.1 (three Chromium contexts → live URL): **pass** — header `v0.1.1`, invite join, 3-person admission with
+  both approvals, voice path connected, group chat, departures to idle. Live bundle hash equals local build (`index--2v7QKFz.js`).
+- Manual tests for 0.1.x: **not run**.
 
 ## Manual test results
 
@@ -129,6 +133,7 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 - 2026-11-25: Approved initial commit, push and GitHub Pages enablement (0.0.1 deployed).
 - 2026-11-25: Approved roadmap reordering; PA-015 brought forward as test deployment only (D-015).
 - 2026-11-25: Approved commit + push of 0.0.2 review fixes (deployed).
+- 2026-11-25: Approved commit + push + deployment of 0.1.1.
 - 2026-11-25: Started PA-006B (stability/privacy review); AGENTS.md (created by Codex) left untracked pending a user decision.
 - 2026-11-25: Approved commit + push + deployment of 0.1.0.
 - 2026-11-25: Approved PA-006 plan (Phase A). During implementation requested: max **10** participants (D-019),
@@ -136,8 +141,7 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 
 ## Next recommended task
 
-1. User approval: commit + push 0.1.1 (auto-deploys), then live smoke test.
-2. Manual tests: "Öncelikli 20 test" in MANUAL_TESTS.md (release gate).
-3. **PA-011 before PA-009:** stability and membership convergence rank above usability in the project priorities; PA-006B showed
+1. Manual tests: "Öncelikli 20 test" in MANUAL_TESTS.md (release gate).
+2. **PA-011 before PA-009:** stability and membership convergence rank above usability in the project priorities; PA-006B showed
    that vanished peers, partial commits and lack of rejoin are the main remaining group risks. PA-009 (per-participant volume,
    device selection) is usability.
