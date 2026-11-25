@@ -23,7 +23,7 @@ Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · C
 | PA-009 | Audio settings and individual volume controls | PA-005 | TODO | Device selection (`setSinkId`), per-participant volume |
 | PA-010 | Main UI implementation and usability | PA-006 | TODO | Compact layout done early on user request (D-022); remaining: usability review |
 | PA-006C | Peer link lifecycle extraction (behavior-preserving refactor) | PA-006B | DONE (code) | D-027; verified with unchanged test suites |
-| PA-011 | Reconnection and error recovery | PA-006C | REVIEW | 0.2.0: signaling reconnect (D-028), media recovery (D-029), shrink-only convergence + rejoin (D-030); real network tests pending |
+| PA-011 | Reconnection and error recovery | PA-006C | REVIEW | 0.2.0 deployed 2026-11-25: signaling reconnect (D-028), media recovery (D-029), shrink-only convergence + rejoin (D-030); real network tests pending |
 | PA-012 | Security hardening and protocol validation | PA-006 | TODO | Group protocol validation, fuzzing |
 | PA-013 | Browser lifecycle and privacy verification | PA-011 | TODO | Edge/Chrome on Windows, BFCache, kill scenarios |
 | PA-014 | Performance and real-world network testing | PA-006 | TODO | CPU/RAM in game, 10-person mesh (D-019), low-bandwidth quality (D-020), CGNAT matrix |

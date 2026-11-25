@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.2.0 (committed and pushed with this update; deployment verified separately) |
+| Current version | 0.2.0 (deployed as test build; commits `ad82942` PA-006C, `edbd782` PA-011) |
 | Current branch | `main` |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
 | Test deployment | https://bisbiliroglu.github.io/psstamigo/ |
@@ -39,6 +39,10 @@
     assertion involved. Kept as an open known issue.
 - PeerJS 1.5.5 cannot ICE-restart (verified in source): replacement connections are used instead.
 - Playwright `setOffline()` does not interrupt WebRTC: real network interruption is manual only (section H).
+- GitHub Actions on `edbd782`: deploy **success**; browser tests **16 / 16** (incl. 10-person).
+- Live smoke 0.2.0 (three Chromium contexts → live URL): **pass** — header `v0.2.0`, 3-person admission, voice connected,
+  signaling socket closed on one member ⇒ reconnected with the same UID while the call stayed "ses bağlı", chat, leave.
+  Live bundle equals local build (`index-D_V2y0a3.js`).
 
 ## Manual test results
 
