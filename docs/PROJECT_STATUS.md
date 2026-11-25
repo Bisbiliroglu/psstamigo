@@ -2,49 +2,47 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.2.0 (deployed as test build; commits `ad82942` PA-006C, `edbd782` PA-011) |
+| Current version | 0.3.0 (committed and pushed with this update; deployment verified separately) |
 | Current branch | `main` |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
 | Test deployment | https://bisbiliroglu.github.io/psstamigo/ |
-| Current task | PA-011 — connection recovery (REVIEW); next: PA-009 Phase A (D-032) |
+| Current task | PA-009 — audio devices, settings, diagnostics (+ single active tab) — REVIEW |
 | Last update | 2026-11-25 |
 
 ## In progress / review
 
-- PA-011 — REVIEW (0.2.0): signaling reconnect (D-028), media recovery (D-029), shrink-only convergence + rejoin (D-030)
-- PA-006C — done in code (behavior-preserving refactor, D-027, commit `ad82942`)
+- PA-009 — REVIEW (0.3.0): device selection/switching without silent fallback (D-036), local mic test (D-033), opt-in
+  preferences (D-034), volumes/mute, processing toggles, single active tab (D-035)
+- PA-011 — REVIEW (0.2.0); PA-006C done in code
 - PA-006, PA-006B, PA-015 — REVIEW (manual tests pending)
 - PA-001 … PA-005, PA-007, PA-008 — REVIEW
-- Priority (D-032): PA-009 → PA-010 → real-world tests → remaining stability/release tasks
+- Priority (D-032): PA-009 (done, REVIEW) → **PA-010 next** → real-world tests → remaining stability/release tasks
 
 ## Completed tasks
 
-- none accepted as DONE (real-network acceptance pending)
+- none accepted as DONE (real-network and physical-device acceptance pending)
 
 ## Last verified build (2026-11-25, macOS, Node 26.13.1)
 
 - `npm audit`: 0 vulnerabilities; runtime: `peerjs@1.5.5` only
 - typecheck: pass
-- build: JS 43.06 KB, CSS 1.95 KB, HTML 2.73 KB gzip (total about 47.7 KB; 0.1.1 was about 44.7 KB, +3.0 KB)
-- no source maps; `connect-src` = self + PeerJS Cloud; no other URLs in the bundle
+- build: JS 49.19 KB, CSS 2.22 KB, HTML 3.55 KB gzip (total about 54.96 KB; 0.2.0 was about 47.7 KB, +7.2 KB)
+- no source maps; `noindex`; `connect-src` = self + PeerJS Cloud; no other URLs in the bundle
 
 ## Last verified tests (2026-11-25)
 
-- Unit: **178 / 178** (11 files; was 154: +8 signaling, +16 recovery/convergence; 2 existing assertions changed from
-  "failed" to "recovering" because media failure now starts recovery by design)
-- Browser (Chromium, fake mic, real PeerJS Cloud): **16 tests** (was 13: +3 recovery with SIMULATED failures)
-  - Full dev suite: 16 / 16. Full production-preview suite: 16 / 16.
-  - 10-person test: **1 failure in 15 runs** (one isolated run right after the full suite). Its details were not captured
-    (output was filtered to the summary line) and 11 further runs with full logs passed. Root cause **unknown**; no privacy
-    assertion involved. Kept as an open known issue.
-- PeerJS 1.5.5 cannot ICE-restart (verified in source): replacement connections are used instead.
-- Playwright `setOffline()` does not interrupt WebRTC: real network interruption is manual only (section H).
-- GitHub Actions on `edbd782`: deploy **success**; browser tests **16 / 16** (incl. 10-person).
-- Live smoke 0.2.0 (three Chromium contexts → live URL): **pass** — header `v0.2.0`, 3-person admission, voice connected,
-  signaling socket closed on one member ⇒ reconnected with the same UID while the call stayed "ses bağlı", chat, leave.
-  Live bundle equals local build (`index-D_V2y0a3.js`).
+- Unit: **208 / 208** (12 files; was 178: +29 `audioDevices.test.ts`, +1 policy scope test; 3 playback tests now await output
+  routing because audio plays only after `setSinkId` resolves)
+- Browser (Chromium, FAKE mic/outputs, real PeerJS Cloud): **21 tests** (was 16: +5 audio/single-tab)
+  - Full dev suite 21 / 21; full production-preview suite 21 / 21; 10-person test 3 / 3.
+- Not verified automatically: physical device routing, real headset/USB/Bluetooth behavior, OS rerouting, real permission-
+  prompt label behavior (test Chromium auto-grants via a flag).
 
 ## Manual test results
+
+### v0.3.0 (audio devices, MANUAL_TESTS section I)
+
+All D-01 … D-26: **NOT RUN** (physical devices required).
 
 ### v0.2.0 (recovery, MANUAL_TESTS section H)
 
@@ -88,7 +86,8 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 - Media recovery needs signaling online for the replacement offer; during a signaling outage it waits/uses attempts.
 - Recovery cannot fix NAT problems (no TURN); convergence can split a partitioned group into two sessions (no merge).
 - A malicious member can trigger removals via false member-sync reports (accepted DoS risk, D-030).
-- Same browser, several tabs: each tab is a separate participant (proposal: one active tab via Web Locks, pending user decision).
+- OS/browser may reroute audio when a selected output disappears before the app is notified (D-036 residual).
+- `selectAudioOutput()` is unavailable in Chrome/Edge; output choice relies on enumerateDevices + setSinkId.
 
 - Group membership is not atomic (D-017); simultaneous join requests can both be aborted (`busy`), candidates retry.
 - Vanished members are removed after about 30–40 s (D-024); there is no automatic rejoin (PA-011).
@@ -120,6 +119,7 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 - 2026-11-25: Approved initial commit, push and GitHub Pages enablement (0.0.1 deployed).
 - 2026-11-25: Approved roadmap reordering; PA-015 brought forward as test deployment only (D-015).
 - 2026-11-25: Approved commit + push of 0.0.2 review fixes (deployed).
+- 2026-11-25: Approved PA-009 with the local mic test (D-033), opt-in preferences (D-034) and Web Locks single tab (D-035).
 - 2026-11-25: Approved PA-011 plan: PA-006C first, resume current mic/speaker on media replacement, shrink-only convergence.
 - 2026-11-25: Roadmap priority change: PA-009 audio devices first (D-032); asked to commit + push after PA-011.
 - 2026-11-25: Approved commit + push + deployment of 0.1.1.
@@ -130,5 +130,5 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 
 ## Next recommended task
 
-1. PA-009 Phase A (audio devices) — awaiting approvals for the local microphone test and preference persistence.
-2. Manual tests: MANUAL_TESTS "Öncelikli 20 test" and section H (recovery).
+1. Manual tests with real devices: MANUAL_TESTS section I (D-01 … D-26), plus pending sections H, E–G and "Öncelikli 20 test".
+2. **PA-010 — UI/UX improvements** (next by D-032).

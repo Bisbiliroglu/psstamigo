@@ -24,7 +24,7 @@ const FORBIDDEN: Array<[RegExp, string]> = [
   [/getDisplayMedia/, "screen capture (PRIV-008)"],
   [/video\s*:\s*true/, "video capture (PRIV-008)"],
   [/MediaRecorder/, "recording (PRIV-009)"],
-  [/indexedDB|localStorage|sessionStorage|document\.cookie/, "persistent storage (spike: none)"],
+  [/indexedDB|sessionStorage|document\.cookie/, "persistent storage other than opt-in audio preferences"],
   [/\.innerHTML|outerHTML|insertAdjacentHTML|document\.write/, "HTML injection risk"],
   [/\beval\(|new Function\(/, "dynamic code"],
   [/https?:\/\/(?!0\.peerjs\.com)[a-z0-9.-]+\.[a-z]{2,}/i, "external URL (PRIV-010)"],
@@ -44,6 +44,11 @@ describe("source policy", () => {
       expect(hits).toEqual([]);
     });
   }
+
+  it("only the opt-in audio preferences module touches localStorage (D-034)", () => {
+    const users = sources.filter((s) => /localStorage/.test(s.code)).map((s) => s.path);
+    expect(users).toEqual(["src/audio/AudioPreferences.ts"]);
+  });
 
   it("only PeerJsSignaling imports peerjs", () => {
     const importers = sources.filter((s) => /from\s+["']peerjs["']/.test(s.code)).map((s) => s.path);

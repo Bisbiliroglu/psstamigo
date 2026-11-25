@@ -1,5 +1,6 @@
 import "./ui/styles.css";
 import { App } from "./app/App";
+import { SingleTab } from "./app/SingleTab";
 
 /**
  * Clickjacking protection. GitHub Pages cannot send `X-Frame-Options` or a CSP
@@ -15,14 +16,44 @@ function isFramed(): boolean {
   }
 }
 
-if (isFramed()) {
+function showMainNotice(text: string): void {
   const main = document.querySelector("main");
   const notice = document.createElement("p");
   notice.className = "notice error";
   notice.setAttribute("role", "alert");
-  notice.textContent = "PsstAmigo güvenlik nedeniyle başka bir sayfanın içinde çalıştırılamaz. Lütfen doğrudan açın.";
+  notice.textContent = text;
   main?.replaceChildren(notice);
+}
+
+if (isFramed()) {
+  showMainNotice("PsstAmigo güvenlik nedeniyle başka bir sayfanın içinde çalıştırılamaz. Lütfen doğrudan açın.");
 } else {
-  const app = new App();
-  app.start();
+  // D-035: one active tab per browser profile. The app (UID, signaling, audio) starts only once this
+  // tab holds the lock, so a second tab never creates a hidden extra participant.
+  let app: App | null = null;
+  const guard = document.getElementById("tab-guard");
+  const guardButton = document.getElementById("tab-guard-continue");
+  const tab = new SingleTab({
+    acquired: () => {
+      if (guard) guard.hidden = true;
+      if (app) return;
+      app = new App();
+      app.start();
+    },
+    busy: (takeOver) => {
+      if (!guard || !guardButton) return takeOver();
+      guard.hidden = false;
+      guardButton.addEventListener("click", () => {
+        guardButton.setAttribute("disabled", "");
+        takeOver();
+      }, { once: true });
+    },
+    replaced: () => {
+      app?.shutdown(); // leaves the call (others are told), stops audio, destroys the Peer
+      app = null;
+      showMainNotice("PsstAmigo başka bir sekmede açıldı; bu sekme kapatıldı. Bu sekmeyi kapatabilirsin.");
+    },
+  });
+  window.addEventListener("pagehide", () => tab.stop());
+  tab.start();
 }

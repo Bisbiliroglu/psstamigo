@@ -52,6 +52,17 @@ Privacy requirements are mandatory, not optional features. They apply to every t
 Residual: a malicious member can trigger another member's removal through false `member-sync` reports (denial of service only,
 D-030). Background tabs may delay recovery timers; they never cause a removal by themselves (decisions re-check ICE state).
 
+## Audio devices, local tests and preferences (PA-009)
+
+- Local mic test (D-033): explicit, outside calls only, 15 s max, never sent/recorded/played back; the browser recording indicator
+  shows during the test and disappears when it stops.
+- Preferences (D-034): opt-in; device ids, master volume and processing toggles only; device ids are per-origin browser values and
+  are not sent anywhere; no names or inventory stored; clearable.
+- No silent fallback (D-036): a missing microphone/output turns the feature off instead of switching devices. Residual: the OS may
+  reroute audio before the app is notified; "system default" follows the OS.
+- Device lists never include or keep video devices.
+- Single active tab (D-035) prevents a forgotten second tab from being a hidden participant in the same browser profile.
+
 ## Security concepts (do not conflate)
 
 | Concept | Status in PsstAmigo |

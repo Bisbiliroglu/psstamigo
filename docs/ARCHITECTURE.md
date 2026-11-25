@@ -158,6 +158,27 @@ MEDIA  connected ⇄ interrupted (same pc recovers, Scenario B)
 Membership convergence (D-030): `member-sync` after membership changes → judged after 10 s → the newer side of any inconsistent
 pair is removed; nobody is added. Removed peers get an explicit "yeniden katılım" button.
 
+## Audio devices (PA-009)
+
+| Module | Responsibility |
+|---|---|
+| `audio/AudioDevices.ts` | enumeration (audio kinds only), capability detection, `devicechange`, stale-result protection |
+| `audio/MicrophoneController.ts` | capture lifecycle + device selection/switching (`exact`, getSettings check), processing constraints |
+| `audio/SpeakerController.ts` | remote playback, `setSinkId` routing before play, master/participant volume, local mute |
+| `audio/AudioDiagnostics.ts` | bounded local mic test (never connected to senders) and test tone |
+| `audio/AudioPreferences.ts` | opt-in localStorage (the only storage user) |
+| `app/SingleTab.ts` | Web Locks single-active-tab guard; app starts only with the lock |
+| `ui/AudioSettingsView.ts` | settings panel rendering; no media calls |
+
+```
+MIC  off ──select (stores only)──► off
+      on ──select──► disable (replaceTrack(null), stop) ──► starting (gUM exact) ──verified──► on (authorized senders)
+                                                              └─fail / other device──► error (OFF, no fallback)
+      device ended / missing ──► OFF + error; reconnect keeps OFF
+OUT  enable/select ──► stop all players ──► per player: setSinkId ──ok──► play
+                                                         └─fail (any)──► speaker OFF + error (no fallback)
+```
+
 ## Startup guard
 
 `main.ts` refuses to start the app when the page is inside a frame (D-012): no signaling, no UID, no media.

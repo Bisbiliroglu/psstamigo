@@ -19,6 +19,14 @@
       <button id="signal-renew" type="button" class="small" hidden>Yeni UID al</button>
     </header>
 
+    <div id="tab-guard" class="tab-guard" role="alertdialog" aria-labelledby="tab-guard-text" hidden>
+      <div class="card">
+        <p id="tab-guard-text">PsstAmigo bu tarayıcıda başka bir sekmede açık.</p>
+        <button id="tab-guard-continue" type="button" class="primary">Burada devam et</button>
+        <p class="hint">Devam edersen diğer sekme görüşmeden çıkar ve kapanır.</p>
+      </div>
+    </div>
+
     <main class="layout">
       <aside class="sidebar">
         <section class="card" aria-labelledby="identity-title">
@@ -55,6 +63,52 @@
           <button id="rejoin-btn" type="button" class="primary wide" hidden>Görüşmeye yeniden katılma isteği gönder</button>
           <div id="requests" class="requests" aria-live="assertive"></div>
         </section>
+        <details class="card audio-settings" id="audio-settings">
+          <summary><h2>Ses ayarları</h2></summary>
+
+          <section class="settings-group" aria-labelledby="set-mic-title">
+            <h3 id="set-mic-title">Mikrofon</h3>
+            <select id="mic-device" aria-label="Mikrofon cihazı"></select>
+            <p class="hint" id="mic-active">Mikrofon kapalı.</p>
+            <div class="row wrap">
+              <button id="grant-labels" type="button" hidden>Mikrofonları listelemek için izin ver</button>
+              <button id="mic-test" type="button">Mikrofonu test et</button>
+              <div class="meter" id="mic-test-meter" data-level="0" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+            <p class="hint" id="mic-test-hint">Test 15 sn sürer; ses hiçbir yere gönderilmez, kaydedilmez ve sana geri çalınmaz.</p>
+            <p class="notice error" id="mic-device-error" role="alert" hidden></p>
+          </section>
+
+          <section class="settings-group" aria-labelledby="set-out-title">
+            <h3 id="set-out-title">Hoparlör / kulaklık</h3>
+            <select id="out-device" aria-label="Ses çıkışı cihazı"></select>
+            <p class="hint" id="out-active">Hoparlör kapalı.</p>
+            <div class="row wrap">
+              <button id="speaker-test" type="button">Hoparlörü test et</button>
+              <label class="inline-field">Genel ses
+                <input id="master-volume" type="range" min="0" max="100" step="5" value="100" aria-label="Genel ses seviyesi" />
+              </label>
+            </div>
+            <p class="notice error" id="out-device-error" role="alert" hidden></p>
+          </section>
+
+          <section class="settings-group" aria-labelledby="set-proc-title">
+            <h3 id="set-proc-title">Ses işleme</h3>
+            <label class="check"><input type="checkbox" id="proc-noiseSuppression" checked /> Gürültü bastırma <span class="hint" id="proc-noiseSuppression-state"></span></label>
+            <label class="check"><input type="checkbox" id="proc-echoCancellation" checked /> Yankı engelleme <span class="hint" id="proc-echoCancellation-state"></span></label>
+            <label class="check"><input type="checkbox" id="proc-autoGainControl" checked /> Otomatik ses seviyesi <span class="hint" id="proc-autoGainControl-state"></span></label>
+          </section>
+
+          <section class="settings-group" aria-labelledby="set-pref-title">
+            <h3 id="set-pref-title">Tercihler</h3>
+            <label class="check"><input type="checkbox" id="remember-prefs" /> Ses cihazı tercihlerimi hatırla</label>
+            <p class="hint">Yalnızca bu tarayıcıda saklanır: seçilen cihazlar, genel ses ve ses işleme ayarları. Mikrofon ve hoparlör her açılışta kapalı başlar.</p>
+            <div class="row wrap">
+              <button id="clear-prefs" type="button">Kaydedilenleri sil</button>
+              <button id="refresh-devices" type="button">Cihazları yenile</button>
+            </div>
+          </section>
+        </details>
       </aside>
 
       <section class="card session" id="session-card" aria-labelledby="session-title">

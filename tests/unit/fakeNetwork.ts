@@ -170,7 +170,7 @@ export interface NetNode {
   gum: ReturnType<typeof vi.fn>;
   capturedTracks: FakeTrack[];
   pendingGum: Array<{ resolve: () => void; reject: (e: unknown) => void }>;
-  players: Array<{ peerId: string; playing: boolean }>;
+  players: Array<{ peerId: string; playing: boolean; sinkId: string | null; volume: number }>;
   sessionEnded: number;
   /** Outbound senders for which addSender was called (committed members only). */
   senders: Map<string, FakeSender>;
@@ -240,9 +240,16 @@ export class FakeNetwork {
     let currentPeer = "";
     const speaker = new SpeakerController({
       createPlayer: (): Player => {
-        const p = { peerId: currentPeer, playing: false };
+        const p = { peerId: currentPeer, playing: false, sinkId: null as string | null, volume: 1 };
         players.push(p);
         return {
+          setSinkId: (id: string) => {
+            p.sinkId = id;
+            return Promise.resolve();
+          },
+          setVolume: (v: number) => {
+            p.volume = v;
+          },
           play: () => {
             p.playing = true;
             return Promise.resolve();

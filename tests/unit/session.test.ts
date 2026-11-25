@@ -205,11 +205,12 @@ describe("1:1 media lifecycle", () => {
     expect(track.readyState).toBe("ended");
   });
 
-  it("speaker plays only after explicit enable", () => {
+  it("speaker plays only after explicit enable", async () => {
     const { a, b } = pair();
     formGroup(net, [a, b]);
     expect(a.players.filter((p) => p.playing)).toHaveLength(0);
     a.speaker.enable();
+    await flush();
     expect(a.players.filter((p) => p.playing)).toHaveLength(1);
     a.speaker.disable();
     expect(a.players.filter((p) => p.playing)).toHaveLength(0);

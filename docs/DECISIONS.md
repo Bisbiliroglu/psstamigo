@@ -228,3 +228,41 @@ The user reports that choosing the right microphone and headset is the most freq
 1. PA-009 audio device management and settings, 2. PA-010 UI/UX, 3. real-world usage feedback and performance tests (run by the
 user with friends in parallel), 4. remaining recovery, stability and release verification. Open tasks are not closed; real-network,
 security and release acceptance criteria remain in force.
+
+## D-033 — Local microphone test (2026-11-25, PA-009, user-approved controlled addition to PRIV-001)
+
+"Mikrofonu test et" and "Mikrofonları listelemek için izin ver" may capture the microphone only after an explicit click,
+only outside a session (no second capture during a call; the live meter is used there), only from the selected device.
+The test track is never given to any RTCRtpSender, never played back (no sidetone), never recorded or sent. It stops on user
+stop, 15 s timeout, panel close, device change, session start, track end and page close. The permission button stops its
+capture immediately after the browser reveals device names.
+
+## D-034 — Opt-in local audio preferences (2026-11-25, PA-009, user-approved)
+
+"Ses cihazı tercihlerimi hatırla" stores in `localStorage` (key `psstamigo.audio.v1`) only: input/output device id, master
+volume, three processing toggles. Never stored: device names or inventory, UID, session/participant data, chat, mic/speaker
+on-off state, approvals, IP addresses. Strict schema on load (anything else is ignored), "Kaydedilenleri sil" removes it.
+Mic and speaker still start OFF on every load. A saved device that is missing is shown as missing and is NOT replaced by another
+device. `AudioPreferences.ts` is the only module allowed to use `localStorage` (policy test). Supersedes "no persistent storage"
+for these fields only.
+
+## D-035 — One active tab per browser profile via Web Locks (2026-11-25, user request)
+
+The app (UID, signaling, audio) starts only when the tab holds the Web Lock `psstamigo-active-tab`. A second tab shows
+"Burada devam et"; on click the first tab is asked over a same-origin BroadcastChannel to leave its call and stop, then the
+lock moves (forced after 3 s if the first tab is frozen; a frozen tab whose lock was taken shuts down when it wakes). No cookies,
+storage, identifiers or network. The browser releases the lock when a tab closes or crashes (no zombie locks). Not a security
+control: other browsers/profiles/private windows are separate and are deliberately not linked (PRIV-010). Unsupported browsers run
+without the guard.
+
+## D-036 — Device selection without silent fallback (2026-11-25, PA-009)
+
+Microphone: explicit devices are opened with `deviceId: { exact }` and verified via `getSettings().deviceId`; on failure or
+disconnection the mic turns off and no other device is opened (a reconnected device stays off). Output: every player is routed with
+`HTMLMediaElement.setSinkId` before `play()`; if routing fails for any player, all playback stops and the speaker turns off.
+`selectAudioOutput()` is not used (not in Chrome/Edge per MDN BCD). Residual risk: the browser/OS may move audio to another device
+before the `devicechange` event reaches the app, and "system default" follows the OS default.
+
+## D-037 — Version 0.3.0 (2026-11-25, PA-009)
+
+New audio device management, diagnostics, volumes, preferences and single-tab guard. No protocol change (still v2).

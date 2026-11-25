@@ -434,6 +434,7 @@ describe("audio privacy in groups (6.x)", () => {
     const [a, b, c] = nodes(3) as [NetNode, NetNode, NetNode];
     formGroup(net, [a, b]);
     b.speaker.enable();
+    await flush();
     const before = b.players.filter((p) => p.playing).length;
     c.session.requestJoin(b.uid);
     net.settle();
@@ -442,6 +443,7 @@ describe("audio privacy in groups (6.x)", () => {
     expect(b.remoteStreams.has(c.uid)).toBe(false); // not before commit
     net.settle();
     expect(b.remoteStreams.has(c.uid)).toBe(true);
+    await flush();
     expect(b.players.filter((p) => p.playing).length).toBe(before + 1);
   });
 

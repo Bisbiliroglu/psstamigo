@@ -81,6 +81,32 @@ All GR items: automated only; real-network verification pending (release gate).
 | REC-014 | Removed participant returns only through a new unanimous admission (explicit click) | ✅ unit |
 | REC-015 | Reload/restart: new UID, nothing restored | ✅ e2e (existing) |
 
+## Audio device requirements (PA-009)
+
+| ID | Requirement | Status (0.3.0) |
+|---|---|---|
+| AUD-001 | Input enumeration (audio only, no invented names, no automatic permission request) | ✅ unit + e2e |
+| AUD-002 | Output enumeration with capability detection | ✅ unit + e2e |
+| AUD-003 | Explicit input selection (`exact`), verified via `getSettings` | ✅ unit + e2e |
+| AUD-004 | Selecting while muted never captures | ✅ unit + e2e |
+| AUD-005 | Switching during a call: old capture stopped first, one capture, authorized senders only | ✅ unit + e2e (fake devices) |
+| AUD-006 | Explicit output selection via `setSinkId` for every remote player | ✅ unit + e2e (fake devices) |
+| AUD-007 | Output switching: route before play; any failure ⇒ speaker off | ✅ unit |
+| AUD-008 | Selecting output while off never plays; newcomers routed before play | ✅ unit + e2e |
+| AUD-009 | `devicechange` handling + manual refresh, no polling | ✅ unit |
+| AUD-010 | No silent microphone fallback | ✅ unit |
+| AUD-011 | No silent output fallback (app-controlled); OS rerouting documented | ✅ unit; residual risk |
+| AUD-012 | Local microphone test (D-033) | ✅ unit + e2e |
+| AUD-013 | Speaker test tone on the selected output | ✅ unit + e2e |
+| AUD-014 | Master volume 0–100 % | ✅ unit |
+| AUD-015 | Per-participant volume (local only) | ✅ unit + e2e |
+| AUD-016 | Individual mute (local only) | ✅ unit + e2e |
+| AUD-017…019 | Noise suppression / echo cancellation / AGC with requested vs applied feedback | ✅ unit; real effect manual |
+| AUD-020 | Opt-in preference persistence (D-034) | ✅ unit |
+| SR-014 | One active tab per browser profile (D-035) | ✅ unit + e2e |
+
+Physical routing to real headsets/speakers is verified only by manual tests (MANUAL_TESTS section I).
+
 ## Privacy requirements
 
 PRIV-001 … PRIV-012 are defined in [PRIVACY_SECURITY.md](PRIVACY_SECURITY.md) and summarized in `CLAUDE.md`.

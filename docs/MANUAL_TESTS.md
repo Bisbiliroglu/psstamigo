@@ -199,6 +199,39 @@ Her senaryo için: **Beklenen · Gözlenen · Toparlanma süresi · Bağlantı s
 | R-15 | Görüşmeden ayrıldıktan sonra | Hiçbir yeniden bağlanma denemesi sürmez; "Sinyal: çevrimiçi" dışında durum değişmez |
 | R-16 | Sinyal sunucusuna erişilemiyor (ör. sadece WebSocket engelli ağ) | "Sinyal: yeniden bağlanıyor (n/8)", sonra "bağlanılamıyor" + "Yeniden dene"; mevcut görüşme sürer |
 
+## I. Ses cihazları (v0.3.0)
+
+Ayarlar: sol taraftaki **"Ses ayarları"**. Hepsi şu an **NOT RUN**. Otomatik testler sahte cihazlarla yapıldı; gerçek kulaklık/hoparlör yönlendirmesi yalnızca bu testlerle doğrulanır.
+
+| ID | Test | Beklenen |
+|---|---|---|
+| D-01 | USB mikrofon ve webcam mikrofonu bağlıyken doğru cihazı seç | Listede ikisi de görünür; seçilen kullanılır |
+| D-02 | Seçili cihazla "Mikrofonu test et" | Konuşunca test göstergesi hareket eder |
+| D-03 | Test sırasında başka kullanıcı | Hiçbir şey duymaz |
+| D-04 | Testi durdur / paneli kapat | Sekmedeki kayıt noktası kaybolur |
+| D-05 | Görüşme sırasında mikrofonu değiştir | Kısa kesintiden sonra ses devam eder; "Aktif mikrofon" yeni cihazı gösterir |
+| D-06 | Değiştirdikten sonra | Karşı taraf yeni cihazdan duyar, eskiden duymaz |
+| D-07 | Mikrofon kapalıyken cihaz değiştir | Mikrofon açılmaz, izin penceresi çıkmaz |
+| D-08 | Aktif USB mikrofonu çıkar | Mikrofon kapanır, hata gösterilir; laptop/webcam mikrofonu açılmaz; geri takınca da kapalı kalır |
+| D-09 | USB kulaklık ve monitör sesi arasında seçim | Listede görünür, seçilebilir |
+| D-10 | "Hoparlörü test et" | Kısa ton seçilen fiziksel cihazdan duyulur |
+| D-11 | Görüşme sırasında ses çıkışını değiştir | Konuşmalar yeni cihazdan gelir |
+| D-12 | Birden fazla katılımcı varken | Herkesin sesi seçilen cihazdan gelir |
+| D-13 | Bluetooth kulaklık bağlantısı kesilir | Hoparlör kapanır ve uyarı çıkar; konuşma laptop hoparlöründen çalmamalı (işletim sistemi kısa süre yönlendirebilir — gözlemini yaz) |
+| D-14 | Hoparlör kapalıyken çıkış seç | Konuşmalar çalmaz |
+| D-15 | Genel ses kaydırıcısı | Herkesin sesi değişir |
+| D-16 | Bir kişinin ses kaydırıcısı | Sadece o kişi değişir |
+| D-17 | Bir kişiyi "Sustur" | Sadece o kişi susar; diğerleri ve karşı taraf etkilenmez |
+| D-18 | Gürültü bastırma / yankı engelleme / otomatik ses | Ayar yanındaki "(uygulandı)" bilgisi ve duyulan fark |
+| D-19 | Yeni katılımcı gelince | Cihaz seçimlerin değişmez |
+| D-20 | "Tercihlerimi hatırla" açıkken sayfayı yenile | Seçimler korunur |
+| D-21 | Yenileme sonrası | Mikrofon ve hoparlör kapalı başlar |
+| D-22 | Hatırlanan cihaz çıkarılmışken aç | "(şu an bağlı değil / bulunamadı)" görünür; başka cihaz açılmaz |
+| D-23 | Ayarlar paneli kapanınca | Mikrofon testi biter |
+| D-24 | Görüşmeden ayrılınca | Kayıt noktası yok, ses yok |
+| D-25 | Windows Chrome ve Edge | D-01, D-05, D-10, D-11 her ikisinde çalışır |
+| D-26 | Aynı tarayıcıda ikinci sekmede PsstAmigo aç | "Başka bir sekmede açık" çıkar; "Burada devam et" deyince eski sekme görüşmeden çıkar |
+
 ## Rapor şablonu
 
 Her test için bir satır doldur (kopyala-yapıştır):

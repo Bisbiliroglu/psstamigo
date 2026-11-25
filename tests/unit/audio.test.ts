@@ -159,12 +159,21 @@ describe("MicrophoneController", () => {
 
 describe("SpeakerController", () => {
   function setupSpeaker() {
-    const players: Array<Player & { playing: boolean }> = [];
+    const players: Array<Player & { playing: boolean; sinkId: string | null; volume: number }> = [];
     const meters: Array<ReturnType<typeof fakeMeter>> = [];
     const speaker = new SpeakerController({
       createPlayer: () => {
         const p = {
           playing: false,
+          sinkId: null as string | null,
+          volume: 1,
+          setSinkId(id: string) {
+            this.sinkId = id;
+            return Promise.resolve();
+          },
+          setVolume(v: number) {
+            this.volume = v;
+          },
           play() {
             this.playing = true;
             return Promise.resolve();
@@ -186,13 +195,16 @@ describe("SpeakerController", () => {
   }
   const stream = () => new FakeStream([new FakeTrack()]) as unknown as MediaStream;
 
-  it("does not play remote audio until explicitly enabled (PRIV-003)", () => {
+  it("does not play remote audio until explicitly enabled (PRIV-003)", async () => {
     const { speaker, players } = setupSpeaker();
     speaker.addRemote("a", stream());
     expect(players).toHaveLength(0);
     expect(speaker.readMaxLevel()).toBe(0);
     speaker.enable();
+    expect(players[0]?.playing).toBe(false); // not before routing is confirmed (AUD-006)
+    await flush();
     expect(players[0]?.playing).toBe(true);
+    expect(players[0]?.sinkId).toBe(""); // system default
     expect(speaker.readMaxLevel()).toBe(0.5);
   });
 

@@ -4,6 +4,16 @@ All notable user-facing changes. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### 0.3.0 — PA-009 audio devices (test build)
+
+- "Ses ayarları": choose microphone and headset/speaker, see which device is really used, refresh devices.
+- Switch microphone or output during a call; a missing device turns mic/speaker off instead of silently using another one.
+- Microphone test (15 s, local only, outside calls) and speaker test tone on the selected output.
+- Master volume, per-person volume and local mute.
+- Noise suppression, echo cancellation and automatic gain toggles with "applied/not applied" feedback.
+- Optional "remember my audio devices" (local only, clearable).
+- Only one PsstAmigo tab per browser is active; a second tab asks before taking over (no hidden duplicate participant).
+
 ### 0.2.0 — PA-011 connection recovery (test build)
 
 - Signaling (PeerJS Cloud) drops no longer affect running calls; the app reconnects with the same UID (up to ~2 minutes,

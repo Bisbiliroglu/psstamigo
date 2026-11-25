@@ -9,6 +9,10 @@ import type { SignalingState } from "../signaling/types";
 
 export interface ViewActions {
   copyUid(): void;
+  /** Local-only per-participant playback controls (AUD-015/016). */
+  participantAudio(peerId: string): { volume: number; muted: boolean };
+  setParticipantVolume(peerId: string, volume: number): void;
+  toggleParticipantMute(peerId: string): void;
   retrySignaling(): void;
   rejoin(target: string): void;
   renewUid(): void;
@@ -257,12 +261,36 @@ export class View {
         const media = document.createElement("span");
         media.className = "media";
         const meter = createMeter(true);
-        row.append(meter, name, media);
+        const vol = document.createElement("input");
+        vol.type = "range";
+        vol.min = "0";
+        vol.max = "100";
+        vol.step = "5";
+        vol.className = "pvol";
+        vol.setAttribute("aria-label", "Bu kişinin ses seviyesi (yalnızca sende)");
+        const peerId = p.peerId;
+        vol.addEventListener("input", () => this.actions.setParticipantVolume(peerId, Number(vol.value) / 100));
+        const mute = document.createElement("button");
+        mute.type = "button";
+        mute.className = "pmute";
+        mute.addEventListener("click", () => this.actions.toggleParticipantMute(peerId));
+        row.append(meter, name, media, vol, mute);
         this.participants.append(row);
         entry = { row, meter };
         this.participantMeters.set(p.peerId, entry);
       }
-      const [, nameEl, mediaEl] = entry.row.children as unknown as [HTMLElement, HTMLElement, HTMLElement];
+      const [, nameEl, mediaEl, volEl, muteEl] = entry.row.children as unknown as [
+        HTMLElement,
+        HTMLElement,
+        HTMLElement,
+        HTMLInputElement,
+        HTMLButtonElement,
+      ];
+      const pa = this.actions.participantAudio(p.peerId);
+      if (document.activeElement !== volEl) volEl.value = String(Math.round(pa.volume * 100));
+      muteEl.textContent = pa.muted ? "Sessizde" : "Sustur";
+      muteEl.setAttribute("aria-pressed", String(pa.muted));
+      muteEl.title = "Yalnızca senin cihazında sessize alır; karşı tarafı etkilemez.";
       nameEl.textContent = p.name ? `${p.name} (${p.peerId})` : p.peerId;
       // Data link (chat/authorization) interruption is shown before media state: nothing works over it right now.
       mediaEl.textContent = p.link === "interrupted" ? "bağlantı kesintide…" : MEDIA_TEXT[p.media];

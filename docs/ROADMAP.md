@@ -4,8 +4,8 @@ Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · C
 
 ## Current priority (D-032, user decision 2026-11-25)
 
-1. **PA-009** — audio device management and audio settings (next)
-2. **PA-010** — UI/UX improvements
+1. **PA-009** — audio device management and audio settings (0.3.0, REVIEW)
+2. **PA-010** — UI/UX improvements (next)
 3. Real-world usage feedback and performance tests (user + friends, in parallel)
 4. Remaining recovery, stability and release verification (PA-012 … PA-016)
 
@@ -20,7 +20,7 @@ Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · C
 | PA-006B | Group stability, privacy review & deployment readiness | PA-006 | REVIEW | Ordering race (D-023), vanished members (D-024), honest bandwidth state (D-025); 0.1.1 deployed and verified live 2026-11-25; manual tests pending |
 | PA-007 | Ephemeral text messaging | PA-003 | REVIEW* | 1:1 done; group fan-out with PA-006 |
 | PA-008 | Audio activity indicators | PA-005 | REVIEW* | Real-signal meters done; threshold tuning with real voices |
-| PA-009 | Audio settings and individual volume controls | PA-005 | TODO | Device selection (`setSinkId`), per-participant volume |
+| PA-009 | Audio devices, settings, diagnostics, volumes (+ single active tab) | PA-005 | REVIEW | 0.3.0: D-033…D-036; physical device tests pending |
 | PA-010 | Main UI implementation and usability | PA-006 | TODO | Compact layout done early on user request (D-022); remaining: usability review |
 | PA-006C | Peer link lifecycle extraction (behavior-preserving refactor) | PA-006B | DONE (code) | D-027; verified with unchanged test suites |
 | PA-011 | Reconnection and error recovery | PA-006C | REVIEW | 0.2.0 deployed 2026-11-25: signaling reconnect (D-028), media recovery (D-029), shrink-only convergence + rejoin (D-030); real network tests pending |

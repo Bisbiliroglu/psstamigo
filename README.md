@@ -19,6 +19,8 @@ your friend enters it, you accept — and you can talk and chat. It is not a Dis
 - Microphone and speaker are **off** by default. Nothing is captured or played until you click.
 - Voice and text go directly between browsers (WebRTC). The website itself (GitHub Pages) only serves static files.
 - Text messages live only in memory and disappear when the call ends or the page closes.
+- "Ses ayarları": pick microphone and headset, test them locally, adjust volumes per person. Optional "remember my devices"
+  stores only device ids, volume and processing toggles in this browser. Only one PsstAmigo tab per browser is active.
 
 ## Technology
 
@@ -74,6 +76,8 @@ The page has `<meta name="robots" content="noindex, nofollow">` and a production
   automatically; signaling outages do not end calls. Recovery does **not** fix NAT/firewall problems (no TURN) and is not
   guaranteed under every network condition; background tabs may recover more slowly.
 - An invite link is not a secret: it contains your temporary UID and can stay in browser history or wherever it was shared.
+- If a selected headset or microphone disconnects, the app turns it off instead of switching devices, but the operating system
+  may briefly reroute audio before the browser tells the app. "System default" follows the OS default device.
 - Chrome and Edge on Windows are the primary targets. Other browsers are untested.
 
 Full details: [docs/PRIVACY_SECURITY.md](docs/PRIVACY_SECURITY.md).
