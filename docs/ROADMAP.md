@@ -18,7 +18,7 @@ Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · C
 | PA-012 | Security hardening and protocol validation | PA-006 | TODO | Group protocol validation, fuzzing |
 | PA-013 | Browser lifecycle and privacy verification | PA-011 | TODO | Edge/Chrome on Windows, BFCache, kill scenarios |
 | PA-014 | Performance and real-world network testing | PA-006 | TODO | CPU/RAM in game, 6-person mesh, CGNAT matrix |
-| PA-015 | GitHub Pages deployment | PA-001 | TODO | Workflow file prepared in PA-001; needs user approval to enable |
+| PA-015 | GitHub Pages deployment | PA-001 | REVIEW | Pages enabled (Actions), first deploy succeeded 2026-11-25 |
 | PA-016 | Release candidate verification | all | TODO | |
 
 \* The spike implemented the core of these tasks for 1:1 calls. Proposal: after PA-001 is accepted, close PA-002…PA-005 and PA-007/008

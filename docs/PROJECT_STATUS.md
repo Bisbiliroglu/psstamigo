@@ -3,8 +3,9 @@
 | Field | Value |
 |---|---|
 | Current version | 0.0.1 |
-| Current branch | `main` (local; nothing committed or pushed yet) |
-| Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public, empty) |
+| Current branch | `main` (pushed to `origin`) |
+| Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
+| Live site | https://bisbiliroglu.github.io/psstamigo/ (GitHub Pages, Actions source, HTTPS enforced) |
 | Current task | PA-001 — Project initialization and technical feasibility spike |
 | Task status | REVIEW (awaiting user review and manual tests) |
 | Last update | 2026-11-25 |
@@ -30,6 +31,8 @@ PA-002 … PA-016 (see [ROADMAP.md](ROADMAP.md))
 
 - Unit (Vitest 5.1.1): **73 / 73 passed** (5 files)
 - Browser integration (Playwright 1.65.1, Chromium, fake mic, real PeerJS Cloud): **7 / 7 passed**, 3 consecutive runs + 1 final run
+- GitHub Actions deploy run (typecheck, unit tests, build, deploy): **pass**
+- Live-site smoke test (Playwright, two Chromium contexts on one machine → `bisbiliroglu.github.io/psstamigo/`): **pass** — signaling online, request/accept, voice path connected, chat delivered, 0 console errors, CSP served
 - Manual / real network: **not run** (requires the user; see below)
 
 ## Manual test results
@@ -65,9 +68,10 @@ PA-002 … PA-016 (see [ROADMAP.md](ROADMAP.md))
 - 2026-11-25: Project name PsstAmigo (was TalkyWalky); repo `psstamigo`; task prefix PA.
 - 2026-11-25: Approved Phase 1 recommendations — STUN only (PeerJS default TURN disabled), approach A (D-002).
 - 2026-11-25: Public GitHub repo created by the user; leak prevention requested (noreply identity, no personal data).
+- 2026-11-25: Approved initial commit, push and GitHub Pages enablement.
 
 ## Next recommended task
 
-After the user reviews PA-001 and approves the initial commit:
-**PA-015 — GitHub Pages deployment** (enable Pages with GitHub Actions source, push, verify the live URL), so manual tests
-3.2–3.7 can run with friends over real networks. Then **PA-006 — P2P mesh group sessions (max 6)**.
+Site is live, so the user can now run manual tests 3.1–3.7 with friends over real networks.
+Then **PA-006 — P2P mesh group sessions (max 6)**. PA-015 (deployment) is effectively done for the spike; release
+hardening stays in PA-015/PA-016.
