@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="dark" />
+    <!-- CSP -->
+    <title>PsstAmigo</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>PsstAmigo <span class="version" id="app-version"></span></h1>
+      <p class="motto">Connect. Talk. Play.</p>
+      <p class="signal" id="signal-status" role="status" aria-live="polite">Sinyal: bağlanıyor…</p>
+    </header>
+
+    <main class="layout">
+      <section class="card" aria-labelledby="identity-title">
+        <h2 id="identity-title">Kimliğin</h2>
+        <label class="field">
+          <span>Görünen ad (isteğe bağlı)</span>
+          <input id="display-name" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="ör. Amigo" />
+        </label>
+        <div class="field">
+          <span>Geçici UID</span>
+          <div class="row">
+            <code id="my-uid" class="uid">—</code>
+            <button id="copy-uid" type="button" disabled>Kopyala</button>
+          </div>
+          <small class="hint">Sayfa yenilenince değişir. UID bir şifre değildir; bağlanmak için her zaman onayın gerekir.</small>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="connect-title">
+        <h2 id="connect-title">Bağlan</h2>
+        <form id="connect-form" class="row" autocomplete="off">
+          <input id="target-uid" type="text" maxlength="40" spellcheck="false" placeholder="psst-xxxx-xxxx-xxxx" aria-label="Hedef UID" />
+          <button id="connect-btn" type="submit" disabled>Bağlan</button>
+          <button id="cancel-btn" type="button" hidden>İptal</button>
+        </form>
+        <p id="notice" class="notice" role="alert" hidden></p>
+        <div id="requests" class="requests" aria-live="assertive"></div>
+      </section>
+
+      <section class="card session" id="session-card" aria-labelledby="session-title">
+        <h2 id="session-title">Görüşme</h2>
+        <p id="session-status" class="status">Aktif görüşme yok.</p>
+        <ul id="participants" class="participants"></ul>
+
+        <div class="controls">
+          <div class="control">
+            <button id="mic-btn" type="button" class="toggle" aria-pressed="false" disabled>
+              <svg class="icon icon-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+              <svg class="icon icon-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 11h-2a5 5 0 0 1-.73 2.6l1.46 1.46A6.96 6.96 0 0 0 19 11ZM15 11V5a3 3 0 0 0-5.9-.77L15 10.13V11ZM4.27 3 3 4.27l6 6V11a3 3 0 0 0 4.5 2.6l1.53 1.53A5 5 0 0 1 7 11H5a7 7 0 0 0 6 6.92V21h2v-3.08a6.9 6.9 0 0 0 3.5-1.43L19.73 21 21 19.73Z"/></svg>
+              <span class="label" id="mic-label">Mikrofon kapalı</span>
+            </button>
+            <div class="meter" id="mic-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="control">
+            <button id="speaker-btn" type="button" class="toggle" aria-pressed="false" disabled>
+              <svg class="icon icon-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3Zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.47 4.47 0 0 0 16.5 12ZM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06a9 9 0 0 0 0-17.54Z"/></svg>
+              <svg class="icon icon-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63Zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12a9 9 0 0 0-7-8.77v2.06A7 7 0 0 1 19 12ZM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25A7 7 0 0 1 14 18.7v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9ZM12 4 9.91 6.09 12 8.18V4Z"/></svg>
+              <span class="label" id="speaker-label">Hoparlör kapalı</span>
+            </button>
+            <div class="meter" id="speaker-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <button id="leave-btn" type="button" class="danger" disabled>Ayrıl</button>
+        </div>
+        <p id="audio-error" class="notice error" role="alert" hidden></p>
+        <p class="hint">Mikrofon ve hoparlör varsayılan olarak kapalıdır. Göstergeler gerçek ses sinyalinden ölçülür; karşı tarafın sesi duyduğunun kanıtı değildir.</p>
+      </section>
+
+      <section class="card chat" aria-labelledby="chat-title">
+        <h2 id="chat-title">Mesajlar</h2>
+        <ol id="chat-log" class="chat-log" aria-live="polite"></ol>
+        <form id="chat-form" class="row" autocomplete="off">
+          <input id="chat-input" type="text" maxlength="500" placeholder="Mesaj yaz…" aria-label="Mesaj" disabled />
+          <button id="chat-send" type="submit" disabled>Gönder</button>
+        </form>
+        <small class="hint">Mesajlar yalnızca bu sayfada, geçici bellekte tutulur.</small>
+      </section>
+
+      <details class="card diagnostics" id="diagnostics">
+        <summary>Bağlantı tanılama</summary>
+        <dl id="diag-list"></dl>
+      </details>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
