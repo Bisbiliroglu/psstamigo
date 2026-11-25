@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.3.0 (committed and pushed with this update; deployment verified separately) |
+| Current version | 0.3.0 (deployed as test build; commit `3266034`) |
 | Current branch | `main` |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
 | Test deployment | https://bisbiliroglu.github.io/psstamigo/ |
@@ -35,6 +35,10 @@
   routing because audio plays only after `setSinkId` resolves)
 - Browser (Chromium, FAKE mic/outputs, real PeerJS Cloud): **21 tests** (was 16: +5 audio/single-tab)
   - Full dev suite 21 / 21; full production-preview suite 21 / 21; 10-person test 3 / 3.
+- GitHub Actions on `3266034`: deploy **success**; browser tests **21 / 21**.
+- Live smoke 0.3.0: **pass** — header `v0.3.0`, 1:1 call, settings lists devices, mic switched between two fake devices during the
+  call (stays on, "Aktif mikrofon" shown), speaker on, single-tab guard shown in a second tab. Live bundle equals local build
+  (`index-BmLLcsUC.js`).
 - Not verified automatically: physical device routing, real headset/USB/Bluetooth behavior, OS rerouting, real permission-
   prompt label behavior (test Chromium auto-grants via a flag).
 
