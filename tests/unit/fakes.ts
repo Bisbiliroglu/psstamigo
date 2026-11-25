@@ -43,6 +43,14 @@ export class FakeSender {
   constructor(initial: FakeTrack | null = null) {
     this.track = initial;
   }
+  params: { encodings: Array<{ maxBitrate?: number }> } = { encodings: [{}] };
+  getParameters(): { encodings: Array<{ maxBitrate?: number }> } {
+    return { encodings: this.params.encodings.map((e) => ({ ...e })) };
+  }
+  setParameters(p: { encodings: Array<{ maxBitrate?: number }> }): Promise<void> {
+    this.params = { encodings: p.encodings.map((e) => ({ ...e })) };
+    return Promise.resolve();
+  }
   replaceTrack(track: FakeTrack | null): Promise<void> {
     this.track = track;
     this.history.push(track);

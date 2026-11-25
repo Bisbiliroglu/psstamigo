@@ -16,169 +16,224 @@
 
 * { box-sizing: border-box; }
 
+/* `hidden` must win over component display rules (e.g. .request { display: flex }). */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
+/* ---------- header ---------- */
 .app-header {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 16px;
-  padding: 16px 20px 8px;
-  max-width: 1100px;
+  gap: 4px 14px;
+  padding: 14px 20px 6px;
+  max-width: 1040px;
   margin: 0 auto;
 }
-.app-header h1 { margin: 0; font-size: 22px; }
+.app-header h1 { margin: 0; font-size: 20px; }
 .version { font-size: 12px; color: var(--muted); font-weight: 400; }
 .motto { margin: 0; color: var(--muted); }
 .signal { margin: 0 0 0 auto; font-size: 13px; color: var(--muted); }
+.signal::before { content: "●"; margin-right: 6px; font-size: 10px; vertical-align: 1px; }
 .signal[data-state="online"] { color: var(--accent); }
 .signal[data-state="failed"], .signal[data-state="offline"] { color: var(--danger); }
 
+/* ---------- layout: narrow sidebar + main session ---------- */
 .layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  align-items: start;
+  grid-template-columns: minmax(280px, 330px) minmax(0, 1fr);
   gap: 14px;
+  align-items: start;
   padding: 8px 20px 24px;
-  max-width: 1100px;
+  max-width: 1040px;
   margin: 0 auto;
 }
+.sidebar { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 14px;
   min-width: 0;
 }
-.card h2 { margin: 0 0 10px; font-size: 16px; }
-.session, .chat { grid-column: span 1; }
+.card h2 { margin: 0 0 10px; font-size: 15px; }
+h3 { margin: 0 0 6px; font-size: 14px; }
 
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.field > span { font-size: 13px; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.field > span { font-size: 12px; color: var(--muted); }
 .row { display: flex; gap: 8px; align-items: center; }
 .row > input { flex: 1; min-width: 0; }
-.hint { color: var(--muted); font-size: 12px; display: block; margin-top: 6px; }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.hint.inline { font-weight: 400; margin-left: 6px; }
 
 input[type="text"] {
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   font: inherit;
 }
-input[type="text"]:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input[type="text"]:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 button {
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   font: inherit;
   cursor: pointer;
+  white-space: nowrap;
 }
 button:hover:not(:disabled) { border-color: var(--muted); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.primary, button[type="submit"]:not(:disabled) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.primary:disabled { background: var(--surface-2); color: var(--text); border-color: var(--border); }
 button.danger:not(:disabled) { background: transparent; color: var(--danger); border-color: var(--danger); }
+button.wide { width: 100%; margin-top: 8px; }
 
 .uid {
   flex: 1;
+  min-width: 0;
   background: var(--surface-2);
   border: 1px dashed var(--border);
   border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 15px;
-  letter-spacing: 0.04em;
+  padding: 7px 10px;
+  font-size: 14px;
+  letter-spacing: 0.03em;
   user-select: all;
   overflow-wrap: anywhere;
 }
 
-.notice { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 14px; }
+details.help { margin-top: 10px; font-size: 12px; color: var(--muted); }
+details.help summary, details.diagnostics summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+details.help p { margin: 6px 0 0; }
+
+.notice { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
 .notice.error { border-left: 3px solid var(--danger); }
 .notice.info { border-left: 3px solid var(--accent); }
 
-.requests { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.requests { display: flex; flex-direction: column; gap: 8px; }
+.requests:not(:empty) { margin-top: 10px; }
 .request {
   border: 1px solid var(--warn);
   border-radius: 8px;
   padding: 10px;
+  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
-.request p { margin: 0; flex: 1 1 100%; }
-.request code { font-size: 13px; }
+.requests .request { margin-top: 0; }
+.request p { margin: 0; flex: 1 1 100%; overflow-wrap: anywhere; }
+.request p.hint { margin: 0; }
+.request code { font-size: 12px; }
 
-.status { margin: 0 0 8px; color: var(--muted); }
-.participants { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.participant {
+/* ---------- session ---------- */
+.session { display: flex; flex-direction: column; gap: 10px; }
+.session-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.session-head h2 { margin: 0; }
+.status { margin: 0; color: var(--muted); }
+.session .hint { margin: 0; }
+
+.controls {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 6px 8px;
+  align-items: center;
+  padding: 8px;
   background: var(--surface-2);
   border-radius: 8px;
-  border: 1px solid transparent;
 }
-.participant[data-speaking="true"] { border-color: var(--accent); }
-.participant .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.participant .media { font-size: 12px; color: var(--muted); }
-.participant .media[data-status="failed"] { color: var(--danger); }
-.participant .media[data-status="interrupted"] { color: var(--warn); }
-
-.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .control { display: flex; align-items: center; gap: 8px; }
-.toggle { display: inline-flex; align-items: center; gap: 6px; }
+#leave-btn { margin-left: auto; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); }
 .toggle .icon { width: 18px; height: 18px; fill: currentColor; }
 .toggle .icon-on { display: none; }
 .toggle[aria-pressed="true"] .icon-on { display: inline; }
 .toggle[aria-pressed="true"] .icon-off { display: none; }
 .toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 
-.meter { display: inline-flex; gap: 2px; align-items: flex-end; height: 18px; }
-.meter i { width: 4px; height: 4px; background: var(--border); border-radius: 1px; display: block; }
-.meter i:nth-child(2) { height: 7px; }
-.meter i:nth-child(3) { height: 10px; }
-.meter i:nth-child(4) { height: 14px; }
-.meter i:nth-child(5) { height: 18px; }
-.meter i.lit { background: var(--accent); }
-.meter.small { height: 12px; }
-.meter.small i { width: 3px; }
-.meter.small i:nth-child(n) { height: calc(var(--i, 1) * 2.4px); }
+/* Voice level: symmetric "equalizer" bars driven only by the real measured level (no random motion). */
+.meter { display: inline-flex; gap: 3px; align-items: center; height: 20px; padding: 0 2px; }
+.meter i {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--border);
+  transform: scaleY(var(--h, 0.15));
+  transition: transform 90ms ease-out, background-color 200ms ease;
+}
+.meter[data-level]:not([data-level="0"]) i { background: var(--accent); }
+.meter.small { height: 14px; gap: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .meter i { transition: none; }
+}
 
+.participants {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+.participants:empty { display: none; }
+.participant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid transparent;
+  min-width: 0;
+}
+.participant[data-speaking="true"] { border-color: var(--accent); }
+.participant .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.participant .media { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.participant .media[data-status="failed"] { color: var(--danger); }
+.participant .media[data-status="interrupted"] { color: var(--warn); }
+
+.chat { border-top: 1px solid var(--border); padding-top: 10px; }
 .chat-log {
   list-style: none;
   margin: 0 0 8px;
-  padding: 0;
-  height: 220px;
+  height: 260px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   background: var(--surface-2);
   border-radius: 8px;
   padding: 8px;
 }
 .chat-log li { overflow-wrap: anywhere; white-space: pre-wrap; }
-.chat-log .meta { color: var(--muted); font-size: 12px; margin-right: 6px; }
+.chat-log .meta { color: var(--muted); font-size: 11px; margin-right: 6px; }
 .chat-log .self .who { color: var(--accent); }
+.chat-log .system { color: var(--muted); font-style: italic; }
 
-.diagnostics summary { cursor: pointer; font-weight: 600; }
-.diagnostics dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0 0; font-size: 13px; }
+.diagnostics { border-top: 1px solid var(--border); padding-top: 8px; }
+.diagnostics dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 12px; }
 .diagnostics dt { color: var(--muted); }
 .diagnostics dd { margin: 0; overflow-wrap: anywhere; }
 
-@media (max-width: 480px) {
-  .layout { padding: 8px 16px 20px; }
+/* ---------- small screens ---------- */
+@media (max-width: 760px) {
+  .layout { grid-template-columns: minmax(0, 1fr); padding: 8px 16px 20px; }
+  .app-header { padding: 12px 16px 4px; }
   .signal { margin-left: 0; }
+  #leave-btn { margin-left: 0; }
+  .chat-log { height: 200px; }
 }

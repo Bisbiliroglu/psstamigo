@@ -24,6 +24,7 @@ Motto: *Connect. Talk. Play.*  Task IDs: `PA-001`, `PA-002`, …
 - **PRIV-008** No camera, no video, no screen/desktop/system audio capture. `getUserMedia` is audio-only (`video: false`). Never use `getDisplayMedia`. Video offers/tracks are rejected.
 - **PRIV-009** No recording: no `MediaRecorder`, no audio files, no audio in storage, no audio to external services.
 - **PRIV-010** No analytics, telemetry, tracking cookies, fingerprinting, ads, crash reporting, external fonts/CDNs. Dependencies are bundled.
+- **GROUP (D-016)** A newcomer needs every member's own approval; audio/playback/history only after commit; each member enforces its own approval.
 - **PRIV-011** A UID grants nothing. Media only after explicit acceptance. All protocol messages are untrusted: schema-validated, size-limited, rate-limited. Render remote text with `textContent` only.
 - **PRIV-012** Never overstate security. WebRTC transport encryption ≠ authenticated end-to-end identity.
 
@@ -40,6 +41,7 @@ Motto: *Connect. Talk. Play.*  Task IDs: `PA-001`, `PA-002`, …
 ## Explicitly out of scope
 
 Camera, video, screen sharing, system audio, recording, accounts, persistent identity, persistent chat, file sharing, public user directory, analytics, ads, backend, database.
+Group size: `MAX_PARTICIPANTS` = 10 (D-019); low-bandwidth mode above 5 (D-020); invite links in the URL fragment only (D-021).
 Deferred (only on explicit request): shared access key, global hotkeys, push-to-talk, friend list, desktop packaging, PWA. Do not build placeholders for these.
 
 ## Workflow

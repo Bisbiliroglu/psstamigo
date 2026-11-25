@@ -4,6 +4,17 @@ All notable user-facing changes. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### 0.1.0 — PA-006 group sessions (test build, not deployed yet)
+
+- Group voice and text chat for up to **10** people (full peer-to-peer mesh). Join through any member's UID.
+- Every current member must approve a newcomer; until then the newcomer gets no audio, no member list and no chat history.
+- The person who started the call can leave without ending it for the others.
+- Join/leave notices in the chat; participant count "x/10"; per-participant voice indicator.
+- **Low-bandwidth mode** above 5 people (16 kbps per voice stream).
+- **Invite links:** "Davet linkini kopyala" → the friend opens the link and confirms before a request is sent.
+- Compact layout (sidebar + single session panel), clearer "Teknik bağlantı bilgisi", voice-wave level meters.
+- Protocol v2: clients older than 0.1.0 cannot join (explicit message, refresh needed).
+
 ### 0.0.2 — PA-015 review fixes (test deployment)
 
 - Security: incoming media offers are audited fail-closed; unreadable or non-audio offers are rejected without answering.

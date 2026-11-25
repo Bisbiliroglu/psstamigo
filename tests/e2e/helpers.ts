@@ -192,3 +192,52 @@ export async function waitForMeterActivity(page: Page, id: string, timeout = 15_
     { polling: "raf", timeout },
   );
 }
+
+/** Total inbound audio RTP packets across all open peer connections. */
+export async function inboundAudioPackets(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const p = (window as unknown as { __probe: { pcs: RTCPeerConnection[] } }).__probe;
+    let total = 0;
+    for (const pc of p.pcs) {
+      if (pc.signalingState === "closed") continue;
+      const stats = await pc.getStats();
+      stats.forEach((r: { type: string; kind?: string; packetsReceived?: number }) => {
+        if (r.type === "inbound-rtp" && r.kind === "audio") total += r.packetsReceived ?? 0;
+      });
+    }
+    return total;
+  });
+}
+
+/** `joiner` requests to join via `via`; every page in `approvers` clicks "Kabul et". */
+export async function joinVia(joiner: Page, via: Page, approvers: Page[]): Promise<void> {
+  await requestTo(joiner, await uidOf(via));
+  for (const p of approvers) {
+    const req = p.getByTestId("incoming-request");
+    await expect(req).toHaveCount(1);
+    await req.getByRole("button", { name: "Kabul et" }).click();
+  }
+  await expect(joiner.locator("#session-status")).toHaveText(/^Görüşmede \d+\/10 kişi var\./, { timeout: 45_000 });
+}
+
+/** Waits until a participant's level meter (identified by UID) shows activity. */
+export async function waitForParticipantActivity(page: Page, peerUid: string, timeout = 15_000): Promise<void> {
+  await page.waitForFunction(
+    (uid) => Number(document.querySelector(`[data-peer="${uid}"] .meter`)?.getAttribute("data-level") ?? "0") > 0,
+    peerUid,
+    { polling: "raf", timeout },
+  );
+}
+
+/** maxBitrate of every audio sender on open peer connections (undefined = browser default). */
+export async function senderMaxBitrates(page: Page): Promise<Array<number | null>> {
+  return page.evaluate(() => {
+    const p = (window as unknown as { __probe: { pcs: RTCPeerConnection[] } }).__probe;
+    return p.pcs
+      .filter((pc) => pc.signalingState !== "closed")
+      .flatMap((pc) => pc.getSenders())
+      .filter((s) => s.track === null || s.track.kind === "audio")
+      .filter((s) => s.getParameters().encodings.length > 0)
+      .map((s) => s.getParameters().encodings[0]?.maxBitrate ?? null);
+  });
+}

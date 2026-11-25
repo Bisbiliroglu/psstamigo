@@ -1,9 +1,9 @@
 # PsstAmigo — Manuel Test Listesi (test sürümü)
 
 **Adres:** https://bisbiliroglu.github.io/psstamigo/
-**Sürüm:** başlıkta yazan sürümü (ör. `v0.0.2`) raporuna mutlaka yaz.
+**Sürüm:** başlıkta yazan sürümü (ör. `v0.1.0`) raporuna mutlaka yaz.
 
-> Bu bir **test sürümüdür**, kararlı sürüm değildir. Şimdilik sadece **iki kişilik (1:1)** görüşme var.
+> Bu bir **test sürümüdür**, kararlı sürüm değildir. v0.1.0 ile **en fazla 10 kişilik** grup görüşmesi var (bölüm E–G).
 > UID'ni yalnızca güvendiğin kişilerle paylaş: UID'ni bilen biri, sen isteği kabul etmeden önce bile IP adresini öğrenebilir.
 
 ## Hazırlık
@@ -93,6 +93,53 @@ Her senaryoda B bölümündeki temel akışı (B-01…B-10) uygula ve sonucu şa
 | … | | | | | | |
 
 ---
+
+## E. Grup görüşmesi (v0.1.0)
+
+Yeni birini eklemek için: o kişi görüşmedeki **herhangi birinin** UID'sini girer veya davet linkini açar. Görüşmedeki **herkes** "Kabul et" demeden kimse katılamaz.
+
+| ID | Senaryo | Beklenen |
+|---|---|---|
+| GF-01 | 2 kişilik görüşme | Durum: "Görüşmede 2/10 kişi var." |
+| GF-02 | 3 kişilik görüşme (3. kişi, ilk başlatan dışındaki kişinin UID'siyle) | Herkeste 3/10; herkes iki kişiyi listede görür |
+| GF-03 | 4 kişilik görüşme | Herkeste 4/10 |
+| GF-04 | 6 kişilik görüşme | Durumda "düşük veri modu açık" yazar; ses anlaşılır mı? |
+| GF-05 | 10 kişilik görüşme (mümkünse) | 10/10; ses kalitesi, gecikme, CPU notu |
+| GF-06 | 11. kişi katılmaya çalışır | "Görüşme kapasitesi dolu." |
+| GF-07 | Katılım isteğini mevcut katılımcılardan **biri** reddeder | Yeni kişi "reddedildi" görür; mevcut görüşme bozulmaz |
+| GF-08 | Kimse yanıt vermez (~45 sn) | İstek zaman aşımına uğrar; görüşme bozulmaz |
+| GF-09 | Görüşmeyi başlatan kişi ayrılır | Diğerleri konuşmaya ve yazışmaya devam eder |
+| GF-10 | Bir katılımcı sekmesini kapatır | Diğerlerinde birkaç saniye içinde "ayrıldı" mesajı; görüşme devam eder |
+| GF-11 | Birden fazla kişi aynı anda konuşur | Herkes duyulur; her kişinin satırındaki dalga ayrı hareket eder |
+| GF-12 | Grup mesajlaşması | Herkesin mesajı herkese bir kez gelir |
+| GF-13 | Davet linki: "Davet linkini kopyala" → arkadaş linki açar | Arkadaşta "İstek gönder / Vazgeç" çıkar; tıklamadan istek gitmez; sonra normal onay |
+
+## F. Grup gizliliği
+
+| ID | Senaryo | Beklenen |
+|---|---|---|
+| GP-01 | Yeni kişi, onaylar tamamlanmadan | Hiç ses duymaz; katılımcı listesini görmez; mesaj almaz |
+| GP-02 | Yeni kişi katıldıktan sonra | Eski mesajlar ona gelmez |
+| GP-03 | Yeni kişinin mikrofonu | Otomatik açılmaz, izin penceresi çıkmaz |
+| GP-04 | Yeni kişinin hoparlörü | Otomatik açılmaz |
+| GP-05 | Mikrofonu kapalı bir üye varken yeni kişi katılır | O üyenin mikrofonu kapalı kalır (kayıt noktası yok) |
+| GP-06 | Mikrofonunu kapat | Sekmedeki kayıt noktası kaybolur; **hiçbir** katılımcı seni duymaz |
+| GP-07 | Hoparlörünü kapat | **Hiçbir** katılımcının sesi duyulmaz; dalgalar durur |
+| GP-08 | Ses aktivitesi | Her katılımcının dalgası sadece o konuşurken hareket eder |
+| GP-09 | Bir katılımcı ayrılır | Kalanların mikrofon/hoparlör durumu değişmez |
+
+## G. Gerçek ağ ve performans (grup)
+
+| ID | Senaryo | Not |
+|---|---|---|
+| GN-01 | Farklı internet sağlayıcılarından 3+ kişi | Bir çift bağlanamazsa yeni kişi katılamaz ve "bağlantı kurulamadı" görünür (TURN yok) |
+| GN-02 | Ev interneti + mobil hotspot karışık grup | |
+| GN-03 | Windows Chrome | |
+| GN-04 | Windows Edge | |
+| GN-05 | Oyun sırasında arka planda grup görüşmesi | |
+| GN-06 | 15–30 dk kesintisiz grup görüşmesi | Kopma / robotik ses |
+| GN-07 | CPU/RAM: 2, 3, 6 ve (mümkünse) 10 kişide | Görev Yöneticisi → tarayıcı |
+| GN-08 | RTT, jitter, paket kaybı | "Teknik bağlantı bilgisi" panelinden, her katılımcı için |
 
 ## Rapor şablonu
 

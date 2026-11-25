@@ -29,7 +29,7 @@ without approval.
 **Decision:** Pass an explicit `iceServers` with only `stun:stun.l.google.com:19302`, which replaces PeerJS defaults.
 Connections that need a relay fail with a clear error. User approved this recommendation.
 
-## D-004 — Full mesh, max 6 participants (2026-11-25)
+## D-004 — Full mesh, max 6 participants (2026-11-25) — **superseded by D-019 (max 10)**
 
 Per the brief. Each participant keeps one data + one media connection per other participant (max 5 each).
 Re-evaluate after performance tests (PA-014).
@@ -54,7 +54,7 @@ excluded because Vite's dev client needs inline scripts and HMR websockets.
 Commits use the repository-local GitHub `noreply` e-mail and the GitHub username, not the personal e-mail or full name.
 LICENSE copyright holder: "PsstAmigo contributors".
 
-## D-009 — Spike is 1:1; concurrent requests are rejected as busy (2026-11-25)
+## D-009 — Spike is 1:1; concurrent requests are rejected as busy (2026-11-25) — **superseded by D-016/D-017**
 
 While requesting or in a session, incoming requests are rejected with `busy`. Two users requesting each other simultaneously
 both get `busy`; one retries. Group join flow is designed in PA-006.
@@ -97,3 +97,52 @@ so testers can tell builds apart (version is shown in the header). No tag, no re
 The user approved the roadmap reordering proposed in PA-001 and moved PA-015 (GitHub Pages) before group sessions, **for testing
 only**. This is not a stable release and does not complete PA-001; real-device/network acceptance is still pending.
 PA-002…PA-005, PA-007, PA-008 are not marked DONE automatically.
+
+## D-016 — Group admission consent: every current member must approve (2026-11-25, PA-006)
+
+A newcomer joins only after **each** current member explicitly accepts. Request acceptance (votes) and membership commit are
+separate steps. Before commit the newcomer receives no audio (senders `replaceTrack(null)`, not given to the mic controller), no
+playback of its stream, no chat history and no other members' UIDs (the member list is sent only after all approvals).
+Each member enforces its **own** approval: it accepts the newcomer's mesh link and media offer only if it voted "accept" for that
+admission itself, so a coordinator or candidate cannot approve on someone else's behalf. Votes are attributed to the authorized
+link they arrive on. This does not solve D-011 (the coordinator's IP is still exposed to the requester before acceptance).
+
+## D-017 — Admission coordinator, member-set snapshot, single admission (2026-11-25, PA-006)
+
+- Coordinator = the member whose UID the candidate entered (deterministic, no election). It only aggregates votes/readiness and
+  sends commit/abort; it never relays audio or chat and owns nothing after the admission.
+- The proposal carries the coordinator's sorted member list; each member compares it with its own and votes `conflict` on mismatch.
+  A snapshot is used instead of a revision counter because independent counters drift between peers.
+- One admission at a time per peer (others get `busy`). Simultaneous admissions may abort each other; the candidate retries.
+- Abort on any reject, vote timeout (45 s), mesh timeout (25 s), cancel, coordinator departure or membership change.
+- The joining party always initiates data and media links ⇒ exactly one application DataConnection and one MediaConnection per pair.
+- Limitation: membership is not atomic. If the coordinator crashes between commit messages, peers may disagree briefly; each shows
+  its own honest state and new admissions stop (snapshot mismatch) until the views converge through departures. No automatic merge.
+
+## D-018 — Protocol v2, explicit incompatibility with v1 (2026-11-25, PA-006)
+
+Group messages need new fields; v1 (0.0.x) peers are rejected explicitly (a v1-formatted `join-reject` is sent so old clients
+show an error; new clients show "farklı sürüm"). No mixed-version sessions.
+
+## D-019 — Maximum 10 participants (2026-11-25, PA-006, user request) — supersedes D-004
+
+User raised the limit from 6 to 10 (`MAX_PARTICIPANTS`). Full mesh: 45 pairs, 9 outbound and 9 inbound voice streams and
+18 RTCPeerConnections per user. CPU/bandwidth impact is **not measured**; risk recorded for PA-014.
+
+## D-020 — Low-bandwidth mode above 5 participants (2026-11-25, PA-006, user request)
+
+When the group has more than `LOW_BANDWIDTH_THRESHOLD` (5) people, every outbound voice sender is capped to 16 kbps via
+`RTCRtpSender.setParameters({ encodings: [{ maxBitrate }] })` (no renegotiation). At 5 or fewer the cap is removed (browser default
+Opus bitrate). The UI shows "düşük veri modu". Opus at 16 kbps remains wideband speech; subjective quality not yet verified.
+
+## D-021 — Invite links in the URL fragment (2026-11-25, PA-006, user request)
+
+"Davet linkini kopyala" copies `…/psstamigo/#join=<uid>`. The fragment is never sent to GitHub Pages. Opening a link never connects
+automatically: the user sees "İstek gönder / Vazgeç"; the normal admission (D-016) still applies. The fragment is removed from the
+address bar after reading. Links expire with the inviter's tab (UID is temporary). Sharing a link = sharing a UID (D-011 applies).
+
+## D-022 — Compact layout (2026-11-25, PA-006, user request)
+
+User reported the 3-column card grid as hard to read. New layout: narrow sidebar (identity + invite, connect + requests) and one
+session card (controls, participants, chat, collapsed "Teknik bağlantı bilgisi" with an explanation). Level meters changed from
+rising "signal bars" to symmetric voice-wave bars, still driven only by the measured level. Single column on narrow screens.

@@ -9,6 +9,9 @@ import type { SignalingState } from "../signaling/types";
 
 export interface ViewActions {
   copyUid(): void;
+  copyInvite(): void;
+  acceptInvite(): void;
+  dismissInvite(): void;
   setDisplayName(name: string): void;
   connect(target: string): void;
   cancelRequest(): void;
@@ -34,6 +37,12 @@ const SIGNAL_TEXT: Record<SignalingState, string> = {
   failed: "Sinyal: başarısız",
 };
 
+const JOIN_STAGE_TEXT = {
+  contacting: "İstek gönderiliyor…",
+  approval: "İstek gönderildi. Görüşmedeki katılımcıların onayı bekleniyor…",
+  connecting: "Onaylandı. Katılımcılarla bağlantı kuruluyor…",
+} as const;
+
 const MEDIA_TEXT = {
   connecting: "ses kuruluyor…",
   connected: "ses bağlı",
@@ -45,6 +54,10 @@ export class View {
   private readonly signal = el<HTMLParagraphElement>("signal-status");
   private readonly uid = el<HTMLElement>("my-uid");
   private readonly copyBtn = el<HTMLButtonElement>("copy-uid");
+  private readonly inviteBtn = el<HTMLButtonElement>("copy-invite");
+  private readonly inviteBanner = el<HTMLDivElement>("invite-banner");
+  private readonly inviteUid = el<HTMLElement>("invite-uid");
+  private readonly inviteAccept = el<HTMLButtonElement>("invite-accept");
   private readonly nameInput = el<HTMLInputElement>("display-name");
   private readonly connectForm = el<HTMLFormElement>("connect-form");
   private readonly targetInput = el<HTMLInputElement>("target-uid");
@@ -78,6 +91,9 @@ export class View {
   constructor(version: string, private readonly actions: ViewActions) {
     el<HTMLSpanElement>("app-version").textContent = `v${version}`;
     this.listen(this.copyBtn, "click", () => actions.copyUid());
+    this.listen(this.inviteBtn, "click", () => actions.copyInvite());
+    this.listen(this.inviteAccept, "click", () => actions.acceptInvite());
+    this.listen(el<HTMLButtonElement>("invite-dismiss"), "click", () => actions.dismissInvite());
     this.listen(this.nameInput, "input", () => actions.setDisplayName(this.nameInput.value));
     this.listen(this.connectForm, "submit", (e) => {
       e.preventDefault();
@@ -109,6 +125,7 @@ export class View {
     this.signal.dataset["state"] = state;
     this.uid.textContent = uid ?? "—";
     this.copyBtn.disabled = uid === null;
+    this.inviteBtn.disabled = uid === null;
     this.updateConnectControls();
   }
 
@@ -137,17 +154,39 @@ export class View {
         strong.textContent = r.name || "(adsız)";
         const code = document.createElement("code");
         code.textContent = r.peerId;
-        p.append(strong, " seninle sesli görüşmek istiyor: ", code);
-        const accept = document.createElement("button");
-        accept.type = "button";
-        accept.className = "primary";
-        accept.textContent = "Kabul et";
-        accept.addEventListener("click", () => this.actions.accept(r.id));
-        const reject = document.createElement("button");
-        reject.type = "button";
-        reject.textContent = "Reddet";
-        reject.addEventListener("click", () => this.actions.reject(r.id));
-        box.append(p, accept, reject);
+        if (s.phase === "active") {
+          p.append("Yeni katılım isteği: ", strong, " ", code);
+          if (r.via) p.append(` (${r.via.name || r.via.peerId} üzerinden)`);
+        } else {
+          p.append(strong, " seninle sesli görüşmek istiyor: ", code);
+        }
+        const status = document.createElement("p");
+        status.className = "hint";
+        status.dataset["testid"] = "admission-status";
+        if (r.stage === "connecting") {
+          status.textContent = "Yeni katılımcıyla bağlantı kuruluyor…";
+        } else if (r.myVote === "accept") {
+          status.textContent =
+            r.approvals !== null && r.required !== null
+              ? `Onay verdiniz. Diğer katılımcıların onayı bekleniyor (${r.approvals}/${r.required}).`
+              : "Onay verdiniz. Diğer katılımcıların onayı bekleniyor.";
+        } else if (s.phase === "active") {
+          status.textContent = "Katılabilmesi için görüşmedeki herkesin onayı gerekir.";
+        }
+        box.append(p);
+        if (status.textContent) box.append(status);
+        if (r.stage === "voting" && r.myVote === "pending") {
+          const accept = document.createElement("button");
+          accept.type = "button";
+          accept.className = "primary";
+          accept.textContent = "Kabul et";
+          accept.addEventListener("click", () => this.actions.accept(r.id));
+          const reject = document.createElement("button");
+          reject.type = "button";
+          reject.textContent = "Reddet";
+          reject.addEventListener("click", () => this.actions.reject(r.id));
+          box.append(accept, reject);
+        }
         return box;
       }),
     );
@@ -156,9 +195,9 @@ export class View {
     const active = s.phase === "active";
     this.sessionStatus.textContent =
       s.phase === "requesting"
-        ? `İstek gönderildi, ${s.target ?? ""} yanıtı bekleniyor…`
+        ? JOIN_STAGE_TEXT[s.joinStage ?? "contacting"]
         : active
-          ? `Aktif görüşme · ${s.participants.length + 1} kişi`
+          ? `Görüşmede ${s.capacity.count}/${s.capacity.max} kişi var.${s.lowBandwidth ? " Kalabalık grup: düşük veri modu açık." : ""}`
           : "Aktif görüşme yok.";
 
     const seen = new Set<string>();
@@ -169,6 +208,7 @@ export class View {
         const row = document.createElement("li");
         row.className = "participant";
         row.dataset["testid"] = "participant";
+        row.dataset["peer"] = p.peerId;
         const name = document.createElement("span");
         name.className = "name";
         const media = document.createElement("span");
@@ -206,16 +246,21 @@ export class View {
       if (this.renderedChatIds.has(entry.id)) continue;
       this.renderedChatIds.add(entry.id);
       const li = document.createElement("li");
-      li.className = entry.fromSelf ? "self" : "remote";
+      li.className = entry.kind === "system" ? "system" : entry.fromSelf ? "self" : "remote";
       const meta = document.createElement("span");
       meta.className = "meta";
       meta.textContent = new Date(entry.at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-      const who = document.createElement("strong");
-      who.className = "who";
-      who.textContent = `${entry.senderName}: `;
       const text = document.createElement("span");
       text.textContent = entry.text;
-      li.append(meta, who, text);
+      if (entry.kind === "system") {
+        li.append(meta, text);
+      } else {
+        const who = document.createElement("strong");
+        who.className = "who";
+        // UID suffix keeps people with the same display name apart.
+        who.textContent = entry.senderUid ? `${entry.senderName} (${entry.senderUid.slice(-4)}): ` : `${entry.senderName}: `;
+        li.append(meta, who, text);
+      }
       this.chatLog.append(li);
     }
     this.chatLog.scrollTop = this.chatLog.scrollHeight;
@@ -276,6 +321,19 @@ export class View {
     );
   }
 
+  /** Shows the "came from an invite link" prompt (null hides it). */
+  renderInvite(uid: string | null): void {
+    this.inviteBanner.hidden = uid === null;
+    this.inviteUid.textContent = uid ?? "";
+    this.updateConnectControls();
+  }
+
+  flashInviteCopied(ok: boolean): void {
+    const original = "Davet linkini kopyala";
+    this.inviteBtn.textContent = ok ? "Link kopyalandı ✓" : "Kopyalanamadı";
+    setTimeout(() => (this.inviteBtn.textContent = original), 1500);
+  }
+
   flashCopied(ok: boolean): void {
     const original = "Kopyala";
     this.copyBtn.textContent = ok ? "Kopyalandı ✓" : "Kopyalanamadı";
@@ -285,6 +343,7 @@ export class View {
   private updateConnectControls(): void {
     const phase = this.session?.phase ?? "idle";
     this.connectBtn.disabled = this.signalingState !== "online" || phase !== "idle";
+    this.inviteAccept.disabled = this.signalingState !== "online" || phase !== "idle";
     this.targetInput.disabled = phase !== "idle";
     this.cancelBtn.hidden = phase !== "requesting";
   }
@@ -299,17 +358,21 @@ function createMeter(small: boolean): HTMLDivElement {
   const meter = document.createElement("div");
   meter.className = small ? "meter small" : "meter";
   meter.setAttribute("aria-hidden", "true");
-  for (let i = 1; i <= 5; i++) {
-    const bar = document.createElement("i");
-    bar.style.setProperty("--i", String(i));
-    meter.append(bar);
-  }
+  for (let i = 1; i <= 5; i++) meter.append(document.createElement("i"));
+  meter.dataset["level"] = "0";
   return meter;
 }
 
+/** Per-bar weights: tallest in the middle, so the meter reads as a voice wave (not signal bars). */
+const BAR_WEIGHTS = [0.55, 0.8, 1, 0.8, 0.55];
+const MIN_BAR = 0.15;
+
 function setMeter(meter: HTMLElement, level: number): void {
-  const lit = Math.round(Math.min(1, Math.max(0, level)) * 5);
+  const v = Math.min(1, Math.max(0, level));
   const bars = meter.children;
-  for (let i = 0; i < bars.length; i++) bars[i]?.classList.toggle("lit", i < lit);
-  meter.dataset["level"] = String(lit);
+  for (let i = 0; i < bars.length; i++) {
+    const h = v === 0 ? MIN_BAR : Math.min(1, Math.max(MIN_BAR, v * (BAR_WEIGHTS[i] ?? 1) * 1.6));
+    (bars[i] as HTMLElement | undefined)?.style.setProperty("--h", h.toFixed(3));
+  }
+  meter.dataset["level"] = String(Math.round(v * 5));
 }

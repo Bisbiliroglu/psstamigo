@@ -8,12 +8,14 @@ No accounts, no cameras, no screen sharing, no recordings.
 PsstAmigo is a hobby project for talking with friends while gaming. Open the page, share your temporary UID,
 your friend enters it, you accept — and you can talk and chat. It is not a Discord replacement and does not try to be.
 
-> **Status:** `0.0.2` — test deployment of the 1:1 prototype. Not a stable release. Group calls (up to 6) are planned. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** `0.1.0` — group calls up to 10 people (test build; live site may still run 0.0.2 until deployed). Not a stable release. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## How it works
 
 - Each page load gets a random temporary UID (e.g. `psst-7k3m-q9xd-2fha`). Reloading gives a new one.
-- Enter a friend's UID → they see a request → they accept or reject.
+- Enter a friend's UID (or send them your **invite link**) → they see a request → they accept or reject.
+- Group calls up to 10 people: a newcomer can ask any member; **every** member must approve. Above 5 people a low-bandwidth
+  voice mode is used. The person who started the call can leave without ending it.
 - Microphone and speaker are **off** by default. Nothing is captured or played until you click.
 - Voice and text go directly between browsers (WebRTC). The website itself (GitHub Pages) only serves static files.
 - Text messages live only in memory and disappear when the call ends or the page closes.
@@ -61,6 +63,9 @@ The page has `<meta name="robots" content="noindex, nofollow">` and a production
 - Audio and data are encrypted in transit by WebRTC (DTLS-SRTP / DTLS), but there is **no authenticated end-to-end identity
   verification**. A UID is not proof of who someone is.
 - The app cannot prevent other participants from recording on their own devices with external software.
+- Full mesh: every participant connects to every other one. Without TURN, a single pair that cannot connect prevents a newcomer
+  from joining. With many people CPU/upload use grows (10 people = 9 outgoing voice streams); not yet measured.
+- Group membership is not atomic: after a crash mid-join, participants may briefly see different lists.
 - Chrome and Edge on Windows are the primary targets. Other browsers are untested.
 
 Full details: [docs/PRIVACY_SECURITY.md](docs/PRIVACY_SECURITY.md).

@@ -11,6 +11,7 @@ import { ActivityDetector, AnalyserMeter, MeterLoop } from "../audio/levels";
 import { MicrophoneController } from "../audio/MicrophoneController";
 import { SpeakerController, type Player } from "../audio/SpeakerController";
 import { APP_VERSION } from "../core/config";
+import { buildInviteUrl, parseInviteHash } from "../core/invite";
 import { sanitizeDisplayName } from "../session/protocol";
 import { SessionController } from "../session/SessionController";
 import { PeerJsSignaling } from "../signaling/PeerJsSignaling";
@@ -46,6 +47,8 @@ export class App {
   private stopSpeakerMeter: (() => void) | null = null;
   private readonly detectors = new Map<string, ActivityDetector>();
   private diagTimer: ReturnType<typeof setInterval> | null = null;
+  /** UID from an invite link, waiting for the user's explicit click (never auto-connects). */
+  private pendingInvite: string | null = null;
 
   constructor() {
     this.mic = new MicrophoneController({
@@ -74,6 +77,14 @@ export class App {
 
     this.view = new View(APP_VERSION, {
       copyUid: () => void this.copyUid(),
+      copyInvite: () => void this.copyInvite(),
+      acceptInvite: () => {
+        const uid = this.pendingInvite;
+        if (!uid) return;
+        this.setInvite(null);
+        this.session.requestJoin(uid);
+      },
+      dismissInvite: () => this.setInvite(null),
       setDisplayName: (name) => {
         this.displayName = sanitizeDisplayName(name) ?? this.displayName;
       },
@@ -123,12 +134,37 @@ export class App {
 
   start(): void {
     window.addEventListener("pagehide", this.onPageHide);
+    window.addEventListener("hashchange", this.readInvite);
     window.addEventListener("pageshow", this.onPageShow);
     this.view.renderSignaling("connecting", null);
     this.view.renderSession(this.session.snapshot());
     this.view.renderMic(this.mic.snapshot());
     this.view.renderSpeaker(this.speaker.snapshot());
+    this.readInvite();
     this.signaling.start();
+  }
+
+  /** Reads "#join=<uid>" once and removes it from the address bar (no re-trigger on reload). */
+  private readonly readInvite = (): void => {
+    const uid = parseInviteHash(location.hash);
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    if (uid) this.setInvite(uid);
+  };
+
+  private setInvite(uid: string | null): void {
+    this.pendingInvite = uid;
+    this.view.renderInvite(uid);
+  }
+
+  private async copyInvite(): Promise<void> {
+    const uid = this.signaling.uid;
+    if (!uid) return;
+    try {
+      await navigator.clipboard.writeText(buildInviteUrl(uid, location));
+      this.view.flashInviteCopied(true);
+    } catch {
+      this.view.flashInviteCopied(false);
+    }
   }
 
   private readonly onPageHide = (): void => {
@@ -217,6 +253,7 @@ export class App {
   shutdown(): void {
     if (this.shutDown) return;
     this.shutDown = true;
+    window.removeEventListener("hashchange", this.readInvite);
     this.setDiagnostics(false);
     this.session.dispose();
     this.mic.dispose();

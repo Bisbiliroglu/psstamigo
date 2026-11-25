@@ -9,7 +9,10 @@ Automated and manual results are reported separately. Manual / real-network test
 | `tests/unit/core.test.ts` | UID format, uniqueness, unbiased sampling, validation; rate limiter; level mapping & hysteresis; chat cap |
 | `tests/unit/protocol.test.ts` | schema validation, malformed/oversized/prototype input, control & bidi characters |
 | `tests/unit/audio.test.ts` | mic off by default, audio-only constraints, real shutdown, re-enable, stale gUM races, device-ended fallback; speaker default off, disable, new participant |
-| `tests/unit/session.test.ts` | authorization (no media before accept, stranger/duplicate/video calls closed), handshake & request timeouts, busy, outgoing flow, reject, unavailable UID, chat rate limit, leave & dispose |
+| `tests/unit/fakeNetwork.ts` | in-memory mesh: real SessionController + MicrophoneController + SpeakerController per node |
+| `tests/unit/group.test.ts` | 3-person admission via non-initiator, 10 + 1 capacity, all-member approval, single rejection, vote timeout, duplicate/forged approval, own-approval enforcement, stale snapshot, replay/foreign sid, simultaneous joins, duplicate links, video/unreadable/invalid offers, partial failure rollback, candidate disconnect, initiator/coordinator/member departure, killed tab, last-member cleanup, commit-gated mic/speaker, mic/speaker change during admission, mic off for all peers, pending getUserMedia races, stale callbacks, group chat fan-out/dedup/impersonation/no history, chat with failed media, idempotent cleanup, low-bandwidth mode |
+| `tests/unit/invite.test.ts` | invite URL in fragment, validation |
+| `tests/unit/session.test.ts` (rewritten for v2) | authorization (no media before accept, stranger/duplicate/video calls closed), handshake & request timeouts, busy, outgoing flow, reject, unavailable UID, chat rate limit, leave & dispose |
 | `tests/unit/policy.test.ts` | static privacy checks on app sources (incl. no track `clone()`, no TURN), PeerJS import boundary, STUN-only config, noindex |
 | `tests/unit/sdpPolicy.test.ts` | fail-closed offer audit: audio-only (+PeerJS data channel) accepted; video, unreadable, invalid, oversized rejected |
 
@@ -28,6 +31,10 @@ An init script observes `getUserMedia`, `RTCPeerConnection` and media playback w
 | leave while mic starting | late capture stopped, nothing attached |
 | reload | new UID, other side returns to idle |
 | framed page | app refuses to start inside an iframe (no UID, no signaling socket) |
+| group: three people (`group.spec.ts`) | the mandatory 19-step flow: C via B, no media/audio/chat before all approvals (getStats inbound = 0), commit, C muted, 3-way audio via per-participant meters, all-to-all chat, A mutes ⇒ capture ended + all senders detached + outbound RTP stops, A speaker off ⇒ no playback, A leaves ⇒ B/C continue, B closes tab ⇒ C safe idle, no TURN, no CSP violation |
+| group: four people | one member rejects, retry, initiator leaves |
+| group: ten people | full mesh 10/10, low-bandwidth mode (all senders 16 kbps), 11th rejected as full, back to normal at 5 |
+| invite link | banner, fragment removed, nothing sent before click, normal approval |
 
 The main flow additionally asserts: no CSP violations, and every peer connection that starts ICE is STUN-only
 (PeerJS's load-time feature-detection connection never negotiates).

@@ -1,338 +1,263 @@
+/**
+ * 1:1 session regression (protocol v2) on the in-memory mesh network.
+ * Group-specific behavior is in group.test.ts.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionController, type SessionMediaHooks } from "../../src/session/SessionController";
-import { LIMITS, TIMEOUTS } from "../../src/core/config";
-import { FakeDataLink, FakeMediaLink, FakeSignaling, FakeStream, FakeTrack } from "./fakes";
+import { LIMITS, MAX_PARTICIPANTS, TIMEOUTS } from "../../src/core/config";
+import { FakeNetwork, formGroup, incomingOf, memberIds, uidOf, type NetDataLink } from "./fakeNetwork";
 
-const ME = "psst-aaaa-aaaa-aaaa";
-const BOB = "psst-bbbb-bbbb-bbbb";
-const EVE = "psst-eeee-eeee-eeee";
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
 
-function setup() {
-  const signaling = new FakeSignaling(ME);
-  const media = {
-    createSilentStream: vi.fn(() => new FakeStream([new FakeTrack()]) as unknown as MediaStream),
-    addSender: vi.fn(),
-    removeSender: vi.fn(),
-    addRemoteStream: vi.fn(),
-    removeRemoteStream: vi.fn(),
-    sessionEnded: vi.fn(),
-  } satisfies SessionMediaHooks;
-  const session = new SessionController({ signaling, media, getDisplayName: () => "Me" });
-  return { signaling, media, session };
+let net: FakeNetwork;
+beforeEach(() => {
+  vi.useFakeTimers();
+  net = new FakeNetwork();
+});
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
+function pair() {
+  const a = net.add(uidOf(0), "Ayla");
+  const b = net.add(uidOf(1), "Bora");
+  return { a, b };
 }
 
-/** Delivers an incoming data link that opens and sends a join request. */
-function incomingRequest(signaling: FakeSignaling, peerId: string, name = "Bob"): FakeDataLink {
-  const link = new FakeDataLink(peerId);
-  signaling.events.emit("incomingData", link);
-  link.open();
-  link.receive({ t: "join-request", v: 1, name });
-  return link;
-}
-
-beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
-
-describe("SessionController authorization (PRIV-011)", () => {
-  it("shows an incoming request without any media side effects", () => {
-    const { signaling, media, session } = setup();
-    incomingRequest(signaling, BOB);
-    const s = session.snapshot();
-    expect(s.incoming).toHaveLength(1);
-    expect(s.phase).toBe("idle");
-    expect(media.createSilentStream).not.toHaveBeenCalled();
-    expect(media.addSender).not.toHaveBeenCalled();
+describe("1:1 request and authorization (PRIV-011)", () => {
+  it("shows the request without any media, audio or member info before acceptance", () => {
+    const { a, b } = pair();
+    b.session.requestJoin(a.uid);
+    net.settle();
+    expect(incomingOf(a)).toMatchObject({ peerId: b.uid, name: "Bora", stage: "voting", myVote: "pending" });
+    expect(a.session.snapshot().phase).toBe("idle");
+    expect(b.session.snapshot()).toMatchObject({ phase: "requesting", joinStage: "approval" });
+    expect(net.openMediaBetween(a.uid, b.uid)).toHaveLength(0);
+    expect(net.openMediaBetween(b.uid, a.uid)).toHaveLength(0);
+    expect(a.gum).not.toHaveBeenCalled();
+    expect(b.gum).not.toHaveBeenCalled();
+    expect(a.senders.size + b.senders.size).toBe(0);
   });
 
-  it("closes an incoming call from a peer that was not accepted", () => {
-    const { signaling, media } = setup();
-    incomingRequest(signaling, BOB);
-    const call = new FakeMediaLink(BOB);
-    signaling.events.emit("incomingMedia", call);
-    expect(call.closed).toBe(true);
-    expect(call.answered).toBeNull();
-    expect(media.addRemoteStream).not.toHaveBeenCalled();
-  });
-
-  it("closes an incoming call from a stranger even during an active session", () => {
-    const { signaling, session } = setup();
-    incomingRequest(signaling, BOB);
-    session.acceptRequest(session.snapshot().incoming[0]!.id);
-    const call = new FakeMediaLink(EVE);
-    signaling.events.emit("incomingMedia", call);
-    expect(call.closed).toBe(true);
-  });
-
-  it("answers only the accepted peer, once, and rejects video offers", () => {
-    const { signaling, session, media } = setup();
-    incomingRequest(signaling, BOB);
-    session.acceptRequest(session.snapshot().incoming[0]!.id);
-    expect(session.snapshot().phase).toBe("active");
-
-    const video = new FakeMediaLink(BOB, "video");
-    signaling.events.emit("incomingMedia", video);
-    expect(video.closed).toBe(true);
-    expect(video.answered).toBeNull();
-
-    const call = new FakeMediaLink(BOB);
-    signaling.events.emit("incomingMedia", call);
-    expect(call.answered).not.toBeNull();
-    expect(media.addSender).toHaveBeenCalledTimes(1);
-    // The synthetic silent track is stopped after the sender is handed to the mic controller.
-    const silent = call.answered as unknown as FakeStream;
-    expect(silent.getTracks()[0]?.readyState).toBe("ended");
-
-    const second = new FakeMediaLink(BOB);
-    signaling.events.emit("incomingMedia", second);
-    expect(second.closed).toBe(true);
-  });
-
-  it("rejects a remote stream that carries video", () => {
-    const { signaling, session, media } = setup();
-    incomingRequest(signaling, BOB);
-    session.acceptRequest(session.snapshot().incoming[0]!.id);
-    const call = new FakeMediaLink(BOB);
-    signaling.events.emit("incomingMedia", call);
-    call.emitStream(new FakeStream([new FakeTrack("audio"), new FakeTrack("video")]));
-    expect(media.addRemoteStream).not.toHaveBeenCalled();
-    expect(call.closed).toBe(true);
-  });
-
-  it("closes links whose first message is not a valid join request", () => {
-    const { signaling, session } = setup();
-    const link = new FakeDataLink(BOB);
-    signaling.events.emit("incomingData", link);
-    link.open();
-    link.receive({ t: "chat", v: 1, text: "let me in" });
-    expect(link.closed).toBe(true);
-    expect(session.snapshot().incoming).toHaveLength(0);
-  });
-
-  it("closes links from malformed peer ids and from self", () => {
-    const { signaling } = setup();
-    const bad = new FakeDataLink("not-a-uid");
-    signaling.events.emit("incomingData", bad);
-    expect(bad.closed).toBe(true);
-    const self = new FakeDataLink(ME);
-    signaling.events.emit("incomingData", self);
-    expect(self.closed).toBe(true);
-  });
-
-  it("ignores duplicate requests from the same peer", () => {
-    const { signaling, session } = setup();
-    incomingRequest(signaling, BOB);
-    const dup = incomingRequest(signaling, BOB);
-    expect(dup.closed).toBe(true);
-    expect(session.snapshot().incoming).toHaveLength(1);
-  });
-
-  it("closes handshakes that never send a request", () => {
-    const { signaling } = setup();
-    const link = new FakeDataLink(BOB);
-    signaling.events.emit("incomingData", link);
-    link.open();
-    vi.advanceTimersByTime(TIMEOUTS.dataOpenMs + 1);
-    expect(link.closed).toBe(true);
-  });
-
-  it("auto-rejects unanswered incoming requests", () => {
-    const { signaling, session } = setup();
-    const link = incomingRequest(signaling, BOB);
-    vi.advanceTimersByTime(TIMEOUTS.incomingRequestMs + 1);
-    expect(link.sent).toContainEqual({ t: "join-reject", v: 1, reason: "timeout" });
-    expect(session.snapshot().incoming).toHaveLength(0);
-  });
-
-  it("rejects new requests as busy during an active session", () => {
-    const { signaling, session } = setup();
-    incomingRequest(signaling, BOB);
-    session.acceptRequest(session.snapshot().incoming[0]!.id);
-    const eve = incomingRequest(signaling, EVE, "Eve");
-    expect(eve.sent).toContainEqual({ t: "join-reject", v: 1, reason: "busy" });
-    expect(eve.closed).toBe(true);
-  });
-});
-
-describe("SessionController outgoing requests", () => {
-  it("validates target UID and prevents self-connection", () => {
-    const { session, signaling } = setup();
-    session.requestJoin("garbage");
-    expect(session.snapshot().notice?.kind).toBe("error");
-    session.requestJoin(ME);
-    expect(session.snapshot().notice?.text).toMatch(/Kendinize/);
-    expect(signaling.connections).toHaveLength(0);
-  });
-
-  it("sends a join request and places a call only after acceptance", () => {
-    const { session, signaling, media } = setup();
-    session.requestJoin(` ${BOB.toUpperCase()} `);
-    const link = signaling.connections[0]!;
-    expect(session.snapshot().phase).toBe("requesting");
-    link.open();
-    expect(link.sent).toEqual([{ t: "join-request", v: 1, name: "Me" }]);
-    expect(signaling.calls).toHaveLength(0);
-    expect(media.createSilentStream).not.toHaveBeenCalled();
-
-    link.receive({ t: "join-accept", v: 1, name: "Bob" });
-    expect(session.snapshot().phase).toBe("active");
-    expect(signaling.calls).toHaveLength(1);
-    expect(media.addSender).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns to idle on rejection without media", () => {
-    const { session, signaling } = setup();
-    session.requestJoin(BOB);
-    const link = signaling.connections[0]!;
-    link.open();
-    link.receive({ t: "join-reject", v: 1, reason: "declined" });
-    expect(session.snapshot().phase).toBe("idle");
-    expect(signaling.calls).toHaveLength(0);
-    expect(link.closed).toBe(true);
-  });
-
-  it("times out if nobody answers", () => {
-    const { session, signaling } = setup();
-    session.requestJoin(BOB);
-    signaling.connections[0]!.open();
-    vi.advanceTimersByTime(TIMEOUTS.requestAnswerMs + 1);
-    expect(session.snapshot().phase).toBe("idle");
-    expect(signaling.connections[0]!.sent).toContainEqual({ t: "cancel", v: 1 });
-  });
-
-  it("fails fast when the UID is unavailable", () => {
-    const { session, signaling } = setup();
-    session.requestJoin(BOB);
-    signaling.events.emit("error", { code: "peer-unavailable", message: "", fatal: false, peerId: BOB });
-    expect(session.snapshot().phase).toBe("idle");
-    expect(session.snapshot().notice?.kind).toBe("error");
-  });
-});
-
-describe("SessionController chat and lifecycle", () => {
-  function activeSession() {
-    const ctx = setup();
-    const link = incomingRequest(ctx.signaling, BOB);
-    ctx.session.acceptRequest(ctx.session.snapshot().incoming[0]!.id);
-    const call = new FakeMediaLink(BOB);
-    ctx.signaling.events.emit("incomingMedia", call);
-    return { ...ctx, link, call };
-  }
-
-  it("exchanges chat and drops excess messages (rate limit)", () => {
-    const { session, link } = activeSession();
-    expect(session.sendChat("  merhaba ")).toBe(true);
-    expect(link.sent).toContainEqual({ t: "chat", v: 1, text: "merhaba" });
-    for (let i = 0; i < 100; i++) link.receive({ t: "chat", v: 1, text: `spam ${i}` });
-    const remote = session.snapshot().chat.filter((c) => !c.fromSelf);
-    expect(remote.length).toBeLessThanOrEqual(20);
-  });
-
-  it("leave sends a leave message, tears everything down and resets audio", () => {
-    const { session, link, call, media } = activeSession();
-    session.sendChat("hi");
-    session.leave();
-    expect(link.sent).toContainEqual({ t: "leave", v: 1 });
-    expect(link.closed).toBe(true);
-    expect(call.closed).toBe(true);
-    expect(media.removeSender).toHaveBeenCalled();
-    expect(media.sessionEnded).toHaveBeenCalledTimes(1);
-    const s = session.snapshot();
-    expect(s.phase).toBe("idle");
-    expect(s.chat).toHaveLength(0);
-  });
-
-  it("remote leave ends the 1:1 session safely", () => {
-    const { session, link, media } = activeSession();
-    link.receive({ t: "leave", v: 1 });
-    expect(session.snapshot().phase).toBe("idle");
-    expect(media.sessionEnded).toHaveBeenCalledTimes(1);
-  });
-
-  it("dispose is idempotent and leaves no session", () => {
-    const { session, media } = activeSession();
-    session.dispose();
-    session.dispose();
-    expect(media.sessionEnded).toHaveBeenCalledTimes(1);
-  });
-
-  it("marks media failed when the voice path does not come up in time", () => {
-    const ctx = setup();
-    incomingRequest(ctx.signaling, BOB);
-    ctx.session.acceptRequest(ctx.session.snapshot().incoming[0]!.id);
-    vi.advanceTimersByTime(TIMEOUTS.mediaSetupMs + 1);
-    expect(ctx.session.snapshot().participants[0]?.media).toBe("failed");
-  });
-});
-
-describe("SessionController review hardening (PA-015 review)", () => {
-  function accepted() {
-    const ctx = setup();
-    incomingRequest(ctx.signaling, BOB);
-    ctx.session.acceptRequest(ctx.session.snapshot().incoming[0]!.id);
-    return ctx;
-  }
-
-  it.each(["unreadable", "invalid", "video"] as const)(
-    "closes an accepted peer's %s offer without answering (fail-closed, B1)",
-    (verdict) => {
-      const { signaling, session, media } = accepted();
-      const call = new FakeMediaLink(BOB, verdict);
-      signaling.events.emit("incomingMedia", call);
-      expect(call.answered).toBeNull();
-      expect(call.closed).toBe(true);
-      expect(media.addSender).not.toHaveBeenCalled();
-      expect(session.snapshot().participants[0]?.media).toBe("failed");
-    },
-  );
-
-  it("an authorized audio-only call after a rejected offer can still connect", () => {
-    const { signaling, session } = accepted();
-    signaling.events.emit("incomingMedia", new FakeMediaLink(BOB, "unreadable"));
-    const call = new FakeMediaLink(BOB);
-    signaling.events.emit("incomingMedia", call);
-    expect(call.answered).not.toBeNull();
-    expect(session.snapshot().participants[0]?.media).toBe("connecting");
-    call.pc!.setIce("connected");
-    expect(session.snapshot().participants[0]?.media).toBe("connected");
-  });
-
-  it("shows an interruption instead of 'connected' while ICE is disconnected", () => {
-    const { signaling, session } = accepted();
-    const call = new FakeMediaLink(BOB);
-    signaling.events.emit("incomingMedia", call);
-    call.pc!.setIce("connected");
-    call.pc!.setIce("disconnected");
-    expect(session.snapshot().participants[0]?.media).toBe("interrupted");
-    call.pc!.setIce("connected");
-    expect(session.snapshot().participants[0]?.media).toBe("connected");
-    call.pc!.setIce("failed");
-    expect(session.snapshot().participants[0]?.media).toBe("failed");
-  });
-
-  it("a late peer-unavailable error for another UID does not fail the current request", () => {
-    const { session, signaling } = setup();
-    session.requestJoin(BOB);
-    signaling.events.emit("error", { code: "peer-unavailable", message: "", fatal: false, peerId: EVE });
-    expect(session.snapshot().phase).toBe("requesting");
-  });
-
-  it("bounds unidentified incoming handshakes and duplicates per peer", () => {
-    const { signaling } = setup();
-    const links: FakeDataLink[] = [];
-    for (let i = 0; i < LIMITS.unauthenticatedLinks + 1; i++) {
-      const link = new FakeDataLink(`psst-cccc-cccc-c${"23456789"[i]}cc`);
-      signaling.events.emit("incomingData", link);
-      links.push(link);
+  it("accept forms a session with mic and speaker off on both sides", () => {
+    const { a, b } = pair();
+    formGroup(net, [a, b]);
+    for (const n of [a, b]) {
+      expect(n.session.snapshot().phase).toBe("active");
+      expect(n.session.snapshot().capacity).toEqual({ count: 2, max: MAX_PARTICIPANTS });
+      expect(n.session.snapshot().lowBandwidth).toBe(false);
+      expect(n.mic.snapshot().state).toBe("off");
+      expect(n.speaker.isEnabled()).toBe(false);
+      expect(n.gum).not.toHaveBeenCalled();
+      expect(n.players.filter((p) => p.playing)).toHaveLength(0);
+      // committed: sender registered but carries nothing while mic is off
+      expect([...n.senders.values()].every((s) => s.track === null)).toBe(true);
     }
-    expect(links.slice(0, LIMITS.unauthenticatedLinks).every((l) => !l.closed)).toBe(true);
-    expect(links[LIMITS.unauthenticatedLinks]!.closed).toBe(true);
+    expect(memberIds(a)).toEqual([b.uid]);
+    expect(memberIds(b)).toEqual([a.uid]);
+    expect(net.openLinksBetween(a.uid, b.uid)).toHaveLength(1);
+    expect(net.openMediaBetween(a.uid, b.uid)).toHaveLength(1);
+  });
 
-    const fresh = setup();
-    const first = new FakeDataLink(BOB);
-    const second = new FakeDataLink(BOB);
-    fresh.signaling.events.emit("incomingData", first);
-    fresh.signaling.events.emit("incomingData", second);
-    expect(first.closed).toBe(false);
-    expect(second.closed).toBe(true);
+  it("reject returns both sides to idle without media", () => {
+    const { a, b } = pair();
+    b.session.requestJoin(a.uid);
+    net.settle();
+    a.session.rejectRequest(incomingOf(a)!.id);
+    net.settle();
+    expect(b.session.snapshot().phase).toBe("idle");
+    expect(b.session.snapshot().notice?.text).toMatch(/reddedildi/);
+    expect(a.session.snapshot().phase).toBe("idle");
+    expect(net.mediaLinks).toHaveLength(0);
+  });
+
+  it("validates the target UID and prevents self-connection", () => {
+    const { a } = pair();
+    a.session.requestJoin("garbage");
+    expect(a.session.snapshot().notice?.kind).toBe("error");
+    a.session.requestJoin(a.uid);
+    expect(a.session.snapshot().notice?.text).toMatch(/Kendinize/);
+    expect(net.dataLinks).toHaveLength(0);
+  });
+
+  it("fails fast for an unavailable UID", () => {
+    const { a } = pair();
+    a.session.requestJoin(uidOf(9));
+    net.settle();
+    expect(a.session.snapshot().phase).toBe("idle");
+    expect(a.session.snapshot().notice?.text).toMatch(/çevrimiçi değil/);
+  });
+
+  it("times out if the request is not answered", () => {
+    const { a, b } = pair();
+    b.session.requestJoin(a.uid);
+    net.settle();
+    vi.advanceTimersByTime(TIMEOUTS.admissionVoteMs + 1);
+    net.settle();
+    expect(b.session.snapshot().phase).toBe("idle");
+    expect(a.session.snapshot().incoming).toHaveLength(0);
+  });
+
+  it("cancel withdraws the request on the other side", () => {
+    const { a, b } = pair();
+    b.session.requestJoin(a.uid);
+    net.settle();
+    b.session.cancelRequest();
+    net.settle();
+    expect(a.session.snapshot().incoming).toHaveLength(0);
+    expect(b.session.snapshot().phase).toBe("idle");
+  });
+
+  it("a second request while one is pending is rejected as busy", () => {
+    const { a, b } = pair();
+    const c = net.add(uidOf(2), "Cem");
+    b.session.requestJoin(a.uid);
+    net.settle();
+    c.session.requestJoin(a.uid);
+    net.settle();
+    expect(c.session.snapshot().phase).toBe("idle");
+    expect(c.session.snapshot().notice?.text).toMatch(/başka bir/);
+    expect(incomingOf(a)?.peerId).toBe(b.uid);
+  });
+
+  it("a user already in a session cannot start another one (no merging, GR-010)", () => {
+    const { a, b } = pair();
+    const c = net.add(uidOf(2), "Cem");
+    const d = net.add(uidOf(3), "Deniz");
+    formGroup(net, [a, b]);
+    formGroup(net, [c, d]);
+    a.session.requestJoin(c.uid);
+    expect(a.session.snapshot().notice?.text).toMatch(/önce ayrılın/);
+    expect(memberIds(a)).toEqual([b.uid]);
+  });
+});
+
+describe("incoming link hygiene", () => {
+  it("closes links whose first message is not a join request or mesh hello", () => {
+    const { a } = pair();
+    const stranger = net.add(uidOf(5), "X");
+    const link = net.connect(stranger.uid, a.uid) as NetDataLink;
+    net.settle();
+    link.send({ t: "chat", v: 2, sid: "0".repeat(32), id: "0".repeat(16), text: "let me in" });
+    net.settle();
+    expect(link.closed).toBe(true);
+    expect(a.session.snapshot().chat).toHaveLength(0);
+  });
+
+  it("answers an older protocol version with a rejection in that version", () => {
+    const { a } = pair();
+    const old = net.add(uidOf(5), "Old");
+    const link = net.connect(old.uid, a.uid) as NetDataLink;
+    const received: unknown[] = [];
+    link.onData((d) => received.push(d));
+    net.settle();
+    link.send({ t: "join-request", v: 1, name: "old client" });
+    net.settle();
+    expect(received).toContainEqual({ t: "join-reject", v: 1, reason: "invalid" });
+    expect(a.session.snapshot().incoming).toHaveLength(0);
+  });
+
+  it("closes handshakes that never identify themselves", () => {
+    const { a } = pair();
+    const s = net.add(uidOf(5), "S");
+    const link = net.connect(s.uid, a.uid) as NetDataLink;
+    net.settle();
+    vi.advanceTimersByTime(TIMEOUTS.dataOpenMs + 1);
+    net.settle();
+    expect(link.closed).toBe(true);
+  });
+
+  it("bounds unidentified handshakes", () => {
+    const { a } = pair();
+    const links: NetDataLink[] = [];
+    for (let i = 0; i < LIMITS.unauthenticatedLinks + 1; i++) {
+      const uid = `psst-cccc-cccc-c${"23456789"[i]}cc`;
+      net.add(uid, "S");
+      links.push(net.connect(uid, a.uid) as NetDataLink);
+    }
+    net.settle();
+    expect(links.filter((l) => l.closed)).toHaveLength(1);
+  });
+
+  it("closes media offers when no admission is in progress", () => {
+    const { a } = pair();
+    const s = net.add(uidOf(5), "S");
+    net.call(s.uid, a.uid, { getAudioTracks: () => [], getTracks: () => [] } as unknown as MediaStream);
+    net.settle();
+    expect(net.mediaLinks.some((l) => l.answered)).toBe(false);
+    expect(net.openMediaBetween(a.uid, s.uid)).toHaveLength(0);
+  });
+});
+
+describe("1:1 media lifecycle", () => {
+  it("mic on sends the single live capture; mic off detaches and stops it (PRIV-002)", async () => {
+    const { a, b } = pair();
+    formGroup(net, [a, b]);
+    await a.mic.enable();
+    await flush();
+    const track = a.capturedTracks[0]!;
+    expect(a.senders.get(b.uid)?.track).toBe(track);
+    a.mic.disable();
+    await flush();
+    expect(a.senders.get(b.uid)?.track).toBeNull();
+    expect(track.readyState).toBe("ended");
+  });
+
+  it("speaker plays only after explicit enable", () => {
+    const { a, b } = pair();
+    formGroup(net, [a, b]);
+    expect(a.players.filter((p) => p.playing)).toHaveLength(0);
+    a.speaker.enable();
+    expect(a.players.filter((p) => p.playing)).toHaveLength(1);
+    a.speaker.disable();
+    expect(a.players.filter((p) => p.playing)).toHaveLength(0);
+  });
+
+  it("shows an interruption instead of 'connected' while ICE is disconnected; failure keeps chat", () => {
+    const { a, b } = pair();
+    formGroup(net, [a, b]);
+    const pc = net.openMediaBetween(a.uid, b.uid)[0]!.pc!;
+    pc.setIce("disconnected");
+    expect(a.session.snapshot().participants[0]?.media).toBe("interrupted");
+    pc.setIce("connected");
+    expect(a.session.snapshot().participants[0]?.media).toBe("connected");
+    pc.setIce("failed");
+    net.settle();
+    expect(a.session.snapshot().participants[0]?.media).toBe("failed");
+    expect(a.session.snapshot().phase).toBe("active"); // media failure is not a departure
+    expect(a.session.sendChat("hala burada")).toBe(true);
+    net.settle();
+    expect(b.session.snapshot().chat.some((c) => c.text === "hala burada")).toBe(true);
+  });
+
+  it("leave tears everything down, resets audio and keeps the UID", async () => {
+    const { a, b } = pair();
+    formGroup(net, [a, b]);
+    await a.mic.enable();
+    a.speaker.enable();
+    a.session.sendChat("hi");
+    net.settle();
+    a.session.leave();
+    net.settle();
+    for (const n of [a, b]) {
+      expect(n.session.snapshot().phase).toBe("idle");
+      expect(n.session.snapshot().chat).toHaveLength(0);
+      expect(n.sessionEnded).toBe(1);
+    }
+    expect(a.capturedTracks.every((t) => t.readyState === "ended")).toBe(true);
+    expect(a.players.every((p) => !p.playing)).toBe(true);
+    expect(net.dataLinks.every((l) => l.closed)).toBe(true);
+    expect(net.mediaLinks.every((l) => l.closed)).toBe(true);
+    expect(a.signaling.uid).toBe(uidOf(0));
+  });
+
+  it("dispose is idempotent", () => {
+    const { a, b } = pair();
+    formGroup(net, [a, b]);
+    a.session.dispose();
+    a.session.dispose();
+    expect(a.sessionEnded).toBe(1);
   });
 });

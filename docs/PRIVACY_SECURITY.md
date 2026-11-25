@@ -2,7 +2,7 @@
 
 Privacy requirements are mandatory, not optional features. They apply to every task, including prototypes.
 
-## Requirements and how they are met (0.0.1)
+## Requirements and how they are met (0.1.0, group)
 
 | ID | Requirement | Implementation | Verification |
 |---|---|---|---|
@@ -18,6 +18,19 @@ Privacy requirements are mandatory, not optional features. They apply to every t
 | PRIV-010 | No tracking | No analytics, no external fonts/scripts; production CSP restricts connections to self + PeerJS Cloud | policy test, CSP in build |
 | PRIV-011 | Connection authorization | Media only for the accepted participant; schema validation, 2 KB size limit, rate limit (20 msgs / 5 s), max 3 pending requests, max 5 unidentified handshakes (1 per peer), handshake timeout | unit |
 | PRIV-012 | Honest claims | This document; README limitations | review |
+
+## Group-specific guarantees (PA-006)
+
+- **Nobody hears you without knowing and approving:** a newcomer gets your audio only after you yourself approved it, it is
+  committed and visible in your participant list, and your mic is on at that moment. Mic-off members stay off.
+- **No approval on someone else's behalf:** votes count only from the voter's own authorized link; each member additionally
+  refuses the newcomer's mesh link and media offer unless it approved that admission itself (defense against a malicious coordinator).
+- **Minimal pre-approval disclosure:** before all approvals the candidate learns nothing about the other members (no UIDs, no names,
+  no IPs of members other than the coordinator). Members see only the candidate's UID and display name.
+- **One capture for all peers;** mic off detaches every sender and stops the capture at once (verified up to 10 peers in unit tests,
+  3 peers with getStats in Chromium).
+- **No history to newcomers;** chat sender identity comes from the link, never from the payload; duplicates are dropped.
+- **Residual:** D-011 still applies to the coordinator; membership is not atomic (D-017).
 
 ## Security concepts (do not conflate)
 
@@ -47,6 +60,9 @@ Voice content, chat content, who talks to whom and when, IP addresses, the micro
 
 | Threat | Mitigation | Residual risk |
 |---|---|---|
+| Forged approval / introduction by a member or candidate | Votes bound to link identity; each member enforces its own approval for mesh-hello and media | — |
+| Stale or replayed admission messages | 128-bit admission ids, finished-id memory (32), session id and member-set checks | — |
+| Invite link leaks | Fragment-only (never sent to server), explicit confirmation, normal approval still required | Link = UID: D-011 applies; valid while the inviter's tab is open |
 | Stranger guesses / learns a UID and calls | UID ≈ 59 bits random; every request needs explicit acceptance; no global directory | A known UID can still send request spam ⇒ rate/pending/handshake limits |
 | **Requester learns your IP before you accept** | None possible with the current design: PeerJS answers every incoming *data* connection automatically, so ICE candidates (incl. your public IP via STUN) are exchanged when the request arrives, before you click Accept. No media or chat is exchanged before acceptance. | **Accepted, documented (D-011).** Share your UID only with people you would share your IP with. |
 | Clickjacking: a malicious page embeds PsstAmigo with `allow="microphone"` | App refuses to start when framed (`main.ts`) | Meta CSP cannot set `frame-ancestors`; GitHub Pages cannot send `X-Frame-Options` |

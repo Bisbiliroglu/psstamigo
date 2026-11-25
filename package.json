@@ -1,7 +1,7 @@
 {
   "name": "psstamigo",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "A lightweight, privacy-focused, peer-to-peer voice and text communication application. No accounts, no cameras, no screen sharing, no recordings.",
   "license": "MIT",
   "type": "module",
