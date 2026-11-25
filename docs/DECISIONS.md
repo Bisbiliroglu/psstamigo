@@ -179,3 +179,11 @@ change are ignored (generation counter).
 
 0.1.0 is already deployed; the PA-006B fixes change runtime behavior (member liveness, ordering, UI text), so the patch version is
 bumped so testers can tell builds apart. Protocol stays v2 (compatible with 0.1.0).
+
+## D-027 — PA-006C: peer link lifecycle extracted (2026-11-25)
+
+Behavior-preserving refactor before PA-011: media attachment, media status, commit-time audio gating, data-link liveness,
+teardown and the bandwidth cap moved from `SessionController` to `session/peerLink.ts` (`PeerLinks`, `BandwidthMode`), with a small
+host interface for membership decisions. Admission/membership logic intentionally stays in `SessionController` (highest risk to
+move, not needed for recovery). Verified with the unchanged test suites (154 unit, 13 e2e). One intended micro-change: a pending
+bandwidth result can no longer update state after the session ended.

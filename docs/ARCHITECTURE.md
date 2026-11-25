@@ -25,7 +25,7 @@
 |---|---|---|
 | `src/core` | config, UID, emitter, rate limiter | — |
 | `src/signaling` | **only place that imports PeerJS**; wraps Peer / DataConnection / MediaConnection into `Signaling`, `DataLink`, `MediaLink` interfaces | core |
-| `src/session` | protocol v2 validation, group membership/admission (`admission.ts` helpers), authorization, media setup, bandwidth mode | core, signaling **interfaces**, messaging |
+| `src/session` | protocol v2 validation, group membership/admission (`SessionController`, `admission.ts` helpers), peer link lifecycle + bandwidth mode (`peerLink.ts`, D-027) | core, signaling **interfaces**, messaging |
 | `src/audio` | AudioContext, mic lifecycle, speaker lifecycle, level meters | core |
 | `src/messaging` | ephemeral chat log | core |
 | `src/ui` | DOM rendering of snapshots; emits user actions | type-only imports |

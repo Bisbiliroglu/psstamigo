@@ -16,13 +16,25 @@
  * The joining party always initiates data + media links, so each pair has exactly one
  * application DataConnection and one MediaConnection (no duplicates, no glare).
  */
-import { LIMITS, LOW_BANDWIDTH_BITRATE_BPS, LOW_BANDWIDTH_THRESHOLD, MAX_PARTICIPANTS, TIMEOUTS } from "../core/config";
+import { LIMITS, MAX_PARTICIPANTS, TIMEOUTS } from "../core/config";
 import { Emitter } from "../core/emitter";
 import { RateLimiter } from "../core/rateLimiter";
 import { isValidUid, normalizeUid } from "../core/uid";
 import { ChatLog, type ChatEntry } from "../messaging/ChatLog";
 import type { DataLink, MediaLink, Signaling } from "../signaling/types";
 import { BoundedSet, memberSnapshot, newMessageId, newSessionId, sameMembers } from "./admission";
+import {
+  BandwidthMode,
+  label,
+  newPeerLink,
+  PeerLinks,
+  type MediaStatus,
+  type PeerLink,
+  type SessionMediaHooks,
+  type Timer,
+} from "./peerLink";
+
+export type { MediaStatus, SessionMediaHooks } from "./peerLink";
 import {
   otherProtocolVersion,
   parseMessage,
@@ -35,8 +47,6 @@ import {
 
 export type SessionPhase = "idle" | "requesting" | "active";
 export type JoinStage = "contacting" | "approval" | "connecting";
-export type MediaStatus = "connecting" | "connected" | "interrupted" | "failed";
-
 export interface ParticipantView {
   readonly peerId: string;
   readonly name: string;
@@ -78,50 +88,10 @@ export interface SessionSnapshot {
   readonly bandwidthLimitFailed: boolean;
 }
 
-/** Audio side effects, implemented by the app layer (keeps session free of Web Audio). */
-export interface SessionMediaHooks {
-  /** Synthetic silent stream used only to create the audio m-line (never a microphone). */
-  createSilentStream(): MediaStream;
-  /** Called only for COMMITTED members. */
-  addSender(peerId: string, sender: RTCRtpSender): void;
-  removeSender(peerId: string, sender: RTCRtpSender): void;
-  /** Called only for COMMITTED members. */
-  addRemoteStream(peerId: string, stream: MediaStream): void;
-  removeRemoteStream(peerId: string): void;
-  /** Session fully ended: return to safe defaults (mic off, speaker off). */
-  sessionEnded(): void;
-}
-
 export interface SessionDeps {
   signaling: Signaling;
   media: SessionMediaHooks;
   getDisplayName(): string;
-}
-
-type Timer = ReturnType<typeof setTimeout>;
-
-/** One application DataConnection (+ at most one MediaConnection) with one peer. */
-interface PeerLink {
-  peerId: string;
-  name: string;
-  data: DataLink;
-  media: MediaLink | null;
-  pc: RTCPeerConnection | null;
-  pcListener: (() => void) | null;
-  sender: RTCRtpSender | null;
-  remoteStream: MediaStream | null;
-  mediaStatus: MediaStatus;
-  iceState: string;
-  mediaTimer: Timer | null;
-  /** True once membership is committed: only then audio may be sent or played. */
-  committed: boolean;
-  chatIds: BoundedSet<string>;
-  /** Fired once when the voice path of an uncommitted link connects. */
-  onReady: (() => void) | null;
-  /** Liveness watch of the data link's peer connection (committed members only). */
-  dataPc: RTCPeerConnection | null;
-  dataListener: (() => void) | null;
-  lostTimer: Timer | null;
 }
 
 interface Admission {
@@ -201,34 +171,6 @@ function admissionAbortText(reason: RejectReason, name: string): string {
 }
 
 /** Sets (or clears, with null) the max bitrate of every encoding of an audio sender. Errors are ignored. */
-/** Returns true if the sender now has the requested cap (or nothing had to change). */
-async function setVoiceBitrate(sender: RTCRtpSender, bps: number | null): Promise<boolean> {
-  try {
-    const params = sender.getParameters();
-    if (!params.encodings || params.encodings.length === 0) return bps === null; // not negotiated: cap not applied
-    let changed = false;
-    for (const enc of params.encodings) {
-      if (bps === null) {
-        if (enc.maxBitrate !== undefined) {
-          delete enc.maxBitrate;
-          changed = true;
-        }
-      } else if (enc.maxBitrate !== bps) {
-        enc.maxBitrate = bps;
-        changed = true;
-      }
-    }
-    if (changed) await sender.setParameters(params);
-    return true;
-  } catch {
-    return false; // sender closed or parameters not settable: default bitrate stays, reported to the UI
-  }
-}
-
-function label(p: { name: string; peerId: string }): string {
-  return p.name || p.peerId;
-}
-
 export class SessionController {
   private sid: string | null = null;
   private readonly members = new Map<string, PeerLink>();
@@ -244,9 +186,8 @@ export class SessionController {
   private disposed = false;
   private readonly events = new Emitter<{ change: SessionSnapshot }>();
   private readonly unsubscribers: Array<() => void> = [];
-  private lowBandwidth = false;
-  private bandwidthLimitFailed = false;
-  private bandwidthGeneration = 0;
+  private readonly bandwidth = new BandwidthMode();
+  private readonly links: PeerLinks;
   /**
    * A proposal received while our own admission was still connecting; it can only be judged
    * after that admission commits or aborts (cross-channel ordering, PA-006B).
@@ -254,6 +195,23 @@ export class SessionController {
   private deferredProposal: { from: string; msg: Extract<ProtocolMessage, { t: "admit-propose" }> } | null = null;
 
   constructor(private readonly deps: SessionDeps) {
+    this.links = new PeerLinks({
+      media: deps.media,
+      isTracked: (p) => this.isTracked(p),
+      isMember: (p) => this.members.get(p.peerId) === p,
+      pendingMediaFailed: (p) => {
+        const adm = this.admission;
+        if (adm?.candidateLink === p) return this.abortAdmission(adm, "failed");
+        if (this.joining?.links.get(p.peerId) === p) this.failJoining(REJECT_TEXT.failed, true);
+      },
+      memberLost: (p) => this.removeMember(p.peerId, `${label(p)} ile bağlantı koptu.`),
+      memberMediaFailed: (p, text) => {
+        this.chat.addSystem(`${label(p)}: ${text}`);
+        this.emit();
+      },
+      dropLink: (link) => this.dropLink(link),
+      changed: () => this.emit(),
+    });
     const s = deps.signaling;
     this.unsubscribers.push(
       s.on("incomingData", (link) => this.handleIncomingData(link)),
@@ -309,8 +267,8 @@ export class SessionController {
       chat: this.chat.list(),
       notice: this.notice,
       capacity: { count: this.members.size + 1, max: MAX_PARTICIPANTS },
-      lowBandwidth: this.lowBandwidth,
-      bandwidthLimitFailed: this.bandwidthLimitFailed,
+      lowBandwidth: this.bandwidth.low,
+      bandwidthLimitFailed: this.bandwidth.failed,
     };
   }
 
@@ -349,28 +307,6 @@ export class SessionController {
     if (t !== undefined) clearTimeout(t);
     this.unauthenticated.delete(link);
     link.close();
-  }
-
-  private newPeerLink(peerId: string, name: string, data: DataLink): PeerLink {
-    return {
-      peerId,
-      name,
-      data,
-      media: null,
-      pc: null,
-      pcListener: null,
-      sender: null,
-      remoteStream: null,
-      mediaStatus: "connecting",
-      iceState: "new",
-      mediaTimer: null,
-      committed: false,
-      chatIds: new BoundedSet<string>(LIMITS.chatDedup),
-      onReady: null,
-      dataPc: null,
-      dataListener: null,
-      lostTimer: null,
-    };
   }
 
   private isTracked(p: PeerLink): boolean {
@@ -556,7 +492,7 @@ export class SessionController {
     adm.stage = "connecting";
     if (!this.sid) this.sid = newSessionId(); // implicit session creation (GR-001)
     adm.requestLink = null;
-    const pl = this.newPeerLink(adm.candidate, adm.candidateName, link);
+    const pl = newPeerLink(adm.candidate, adm.candidateName, link);
     adm.candidateLink = pl;
     pl.onReady = () => this.markReady(adm, this.selfUid());
     link.send({
@@ -722,7 +658,7 @@ export class SessionController {
     }
     clearTimeout(adm.timer);
     adm.stage = "connecting";
-    const pl = this.newPeerLink(adm.candidate, adm.candidateName, link);
+    const pl = newPeerLink(adm.candidate, adm.candidateName, link);
     adm.candidateLink = pl;
     pl.onReady = () => {
       if (this.admission !== adm || !this.sid) return;
@@ -868,7 +804,7 @@ export class SessionController {
     if (msg.t === "mesh-ack" && msg.sid === j.sid && msg.aid === j.aid && j.pendingMesh.get(link.peerId) === link) {
       j.pendingMesh.delete(link.peerId);
       const info = j.expected.find((m) => m.uid === link.peerId);
-      const pl = this.newPeerLink(link.peerId, info?.name ?? "", link);
+      const pl = newPeerLink(link.peerId, info?.name ?? "", link);
       j.links.set(link.peerId, pl);
       this.placeCall(pl);
       this.emit();
@@ -897,7 +833,7 @@ export class SessionController {
     j.expected = msg.members;
     j.timer = setTimeout(() => this.failJoining(REJECT_TEXT.failed, true), TIMEOUTS.meshSetupMs + TIMEOUTS.localSlackMs);
 
-    const coordinator = this.newPeerLink(j.target, msg.name, link);
+    const coordinator = newPeerLink(j.target, msg.name, link);
     j.links.set(j.target, coordinator);
     this.placeCall(coordinator);
     for (const m of msg.members) this.connectMesh(j, m);
@@ -989,166 +925,18 @@ export class SessionController {
   }
 
   private attachMedia(p: PeerLink, link: MediaLink, silent: MediaStream): void {
-    const pc = link.getPeerConnection();
-    if (pc) {
-      if (p.pc && p.pcListener) {
-        p.pc.removeEventListener("iceconnectionstatechange", p.pcListener);
-        p.pc.removeEventListener("connectionstatechange", p.pcListener);
-      }
-      p.pc = pc;
-      const sender = pc.getSenders().find((s) => s.track?.kind === "audio") ?? null;
-      if (sender) {
-        p.sender = sender;
-        if (p.committed) {
-          this.deps.media.addSender(p.peerId, sender);
-        } else {
-          // Not a member yet: nothing is ever sent until commit (GR-005).
-          void sender.replaceTrack(null).catch(() => undefined);
-        }
-      }
-      const update = (): void => {
-        if (p.pc !== pc || !this.isTracked(p)) return;
-        p.iceState = pc.iceConnectionState;
-        if (pc.connectionState === "failed" || pc.iceConnectionState === "failed") {
-          return this.onMediaFailed(p, "Ses bağlantısı koptu veya kurulamadı (NAT/ağ kısıtı olabilir).");
-        }
-        if (p.mediaStatus === "failed") return;
-        if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
-          if (p.mediaStatus !== "connected") {
-            p.mediaStatus = "connected";
-            if (p.mediaTimer) clearTimeout(p.mediaTimer);
-            p.mediaTimer = null;
-          }
-          if (!p.committed && p.onReady) {
-            const ready = p.onReady;
-            p.onReady = null;
-            ready();
-          }
-        } else if (pc.iceConnectionState === "disconnected" && p.mediaStatus === "connected") {
-          p.mediaStatus = "interrupted"; // never show "connected" while it is not
-        }
-        this.emit();
-      };
-      p.pcListener = update;
-      pc.addEventListener("iceconnectionstatechange", update);
-      pc.addEventListener("connectionstatechange", update);
-    }
-    for (const t of silent.getTracks()) t.stop(); // synthetic silent track no longer needed
-
-    link.onStream((stream) => {
-      if (p.media !== link || !this.isTracked(p)) return;
-      if (stream.getVideoTracks().length > 0) return this.onMediaFailed(p, "Video içeren bağlantı reddedildi.");
-      p.remoteStream = stream;
-      if (p.committed) this.deps.media.addRemoteStream(p.peerId, stream); // never before commit
-    });
-    const onGone = (): void => {
-      if (p.media === link && this.isTracked(p)) this.onMediaFailed(p, "Ses bağlantısı kapandı.");
-    };
-    link.onClose(onGone);
-    link.onError(onGone);
-  }
-
-  private onMediaFailed(p: PeerLink, text: string): void {
-    if (!p.committed) {
-      // A pending (not yet admitted) link failed: roll back the admission / join.
-      const adm = this.admission;
-      if (adm?.candidateLink === p) return this.abortAdmission(adm, "failed");
-      if (this.joining?.links.get(p.peerId) === p) return this.failJoining(REJECT_TEXT.failed, true);
-      return;
-    }
-    // Established member: media failure is NOT a departure; chat keeps working.
-    if (p.mediaStatus === "failed") return;
-    p.mediaStatus = "failed";
-    if (p.mediaTimer) clearTimeout(p.mediaTimer);
-    p.mediaTimer = null;
-    if (p.sender) this.deps.media.removeSender(p.peerId, p.sender);
-    p.sender = null;
-    this.deps.media.removeRemoteStream(p.peerId);
-    const media = p.media;
-    p.media = null;
-    media?.close();
-    this.chat.addSystem(`${label(p)}: ${text}`);
-    this.emit();
+    this.links.attachMedia(p, link, silent);
   }
 
   /** Membership commit for one link: only now audio may flow (respecting mic/speaker state). */
   private commitLink(p: PeerLink): void {
-    p.committed = true;
-    p.onReady = null;
     this.members.set(p.peerId, p);
-    this.watchDataLiveness(p);
-    if (p.sender) this.deps.media.addSender(p.peerId, p.sender);
-    if (p.remoteStream) this.deps.media.addRemoteStream(p.peerId, p.remoteStream);
+    this.links.commit(p);
     this.applyBandwidthMode();
-    if (p.mediaStatus === "connecting") {
-      p.mediaTimer = setTimeout(() => {
-        p.mediaTimer = null;
-        if (this.members.get(p.peerId) === p && p.mediaStatus === "connecting") {
-          this.onMediaFailed(p, "Ses bağlantısı zamanında kurulamadı (NAT/ağ kısıtı olabilir).");
-        }
-      }, TIMEOUTS.mediaSetupMs);
-    }
   }
 
-  /**
-   * Detects members that vanished without a goodbye (crashed tab, lost network): data link ICE
-   * "failed"/"closed" ⇒ gone now; "disconnected" for TIMEOUTS.peerLostMs ⇒ gone. No extra traffic.
-   */
-  private watchDataLiveness(p: PeerLink): void {
-    const pc = p.data.getPeerConnection();
-    if (!pc) return;
-    const check = (): void => {
-      if (this.members.get(p.peerId) !== p || p.dataPc !== pc) return;
-      const state = pc.iceConnectionState;
-      if (state === "failed" || state === "closed") {
-        this.removeMember(p.peerId, `${label(p)} ile bağlantı koptu.`);
-      } else if (state === "disconnected") {
-        if (!p.lostTimer) {
-          p.lostTimer = setTimeout(() => {
-            p.lostTimer = null;
-            if (this.members.get(p.peerId) === p && pc.iceConnectionState === "disconnected") {
-              this.removeMember(p.peerId, `${label(p)} ile bağlantı koptu.`);
-            }
-          }, TIMEOUTS.peerLostMs);
-        }
-      } else if (p.lostTimer) {
-        clearTimeout(p.lostTimer);
-        p.lostTimer = null;
-      }
-    };
-    p.dataPc = pc;
-    p.dataListener = check;
-    pc.addEventListener("iceconnectionstatechange", check);
-    check();
-  }
-
-  /** Releases everything that belongs to ONE peer. Shared capture / AudioContext are untouched. */
   private teardownLink(p: PeerLink): void {
-    if (p.mediaTimer) clearTimeout(p.mediaTimer);
-    p.mediaTimer = null;
-    if (p.lostTimer) clearTimeout(p.lostTimer);
-    p.lostTimer = null;
-    if (p.dataPc && p.dataListener) p.dataPc.removeEventListener("iceconnectionstatechange", p.dataListener);
-    p.dataPc = null;
-    p.dataListener = null;
-    p.onReady = null;
-    if (p.pc && p.pcListener) {
-      p.pc.removeEventListener("iceconnectionstatechange", p.pcListener);
-      p.pc.removeEventListener("connectionstatechange", p.pcListener);
-    }
-    p.pcListener = null;
-    if (p.sender) {
-      if (p.committed) this.deps.media.removeSender(p.peerId, p.sender);
-      else void p.sender.replaceTrack(null).catch(() => undefined);
-    }
-    p.sender = null;
-    if (p.committed) this.deps.media.removeRemoteStream(p.peerId);
-    p.remoteStream = null;
-    const media = p.media;
-    p.media = null;
-    p.pc = null;
-    media?.close();
-    this.dropLink(p.data);
+    this.links.teardown(p);
   }
 
   // ================================================================ membership changes
@@ -1166,33 +954,17 @@ export class SessionController {
     else this.emit();
   }
 
-  /**
-   * Low-bandwidth mode (D-020): cap every member's outbound voice bitrate while the group is
-   * larger than LOW_BANDWIDTH_THRESHOLD; restore the browser default otherwise.
-   * Only encoder parameters change: no renegotiation, no effect on mic/privacy state.
-   */
   private applyBandwidthMode(): void {
-    const low = this.members.size + 1 > LOW_BANDWIDTH_THRESHOLD;
-    this.lowBandwidth = low;
-    const gen = ++this.bandwidthGeneration;
-    const results = [...this.members.values()]
-      .filter((p) => p.sender)
-      .map((p) => setVoiceBitrate(p.sender as RTCRtpSender, low ? LOW_BANDWIDTH_BITRATE_BPS : null));
-    void Promise.all(results).then((ok) => {
-      if (gen !== this.bandwidthGeneration || this.disposed) return; // a newer change superseded this one
-      const failed = low && ok.includes(false);
-      if (failed !== this.bandwidthLimitFailed) {
-        this.bandwidthLimitFailed = failed;
-        this.emit();
-      }
+    const senders = [...this.members.values()].flatMap((p) => (p.sender ? [p.sender] : []));
+    this.bandwidth.apply(this.members.size + 1, senders, () => {
+      if (!this.disposed) this.emit();
     });
   }
 
   private endSession(info: string | null): void {
     this.sid = null;
     this.deferredProposal = null;
-    this.bandwidthLimitFailed = false;
-    this.lowBandwidth = false;
+    this.bandwidth.reset();
     this.chat.clear(); // ephemeral: history is gone when the session ends
     if (info) this.notice = { kind: "info", text: info };
     this.deps.media.sessionEnded();
