@@ -25,6 +25,7 @@ Motto: *Connect. Talk. Play.*  Task IDs: `PA-001`, `PA-002`, …
 - **PRIV-009** No recording: no `MediaRecorder`, no audio files, no audio in storage, no audio to external services.
 - **PRIV-010** No analytics, telemetry, tracking cookies, fingerprinting, ads, crash reporting, external fonts/CDNs. Dependencies are bundled.
 - **GROUP (D-016)** A newcomer needs every member's own approval; audio/playback/history only after commit; each member enforces its own approval.
+- **ORDERING (D-023)** Never act on a not-yet-committed peer's messages; buffer (bounded) until own commit, drop on rollback.
 - **PRIV-011** A UID grants nothing. Media only after explicit acceptance. All protocol messages are untrusted: schema-validated, size-limited, rate-limited. Render remote text with `textContent` only.
 - **PRIV-012** Never overstate security. WebRTC transport encryption ≠ authenticated end-to-end identity.
 

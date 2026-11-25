@@ -66,6 +66,13 @@ admission inside a peer:  none → voting → connecting → (commit | abort) �
    commit on every peer: sender → mic controller (live only if mic is on), stream → speaker (plays only if on)
 ```
 
+Ordering across channels (D-023): commit messages and the newcomer's first messages use different links. A member keeps the
+candidate's early messages (max 16) until its own commit and drops them on rollback; a newcomer keeps members' early messages until
+its commit; a proposal that already counts our pending newcomer is deferred until our admission finishes.
+
+Liveness (D-024): committed members are watched through their data link's ICE state: `failed`/`closed` => removed,
+`disconnected` for 30 s => removed (crashed tabs never send `leave`).
+
 Abort paths: any `declined/busy/conflict/full` vote, vote timeout 45 s, mesh timeout 25 s (+8 s local slack on members and
 candidate), candidate cancel/disconnect, coordinator departure, any membership change, invalid/video/unreadable offer.
 Rollback closes only the candidate's links; the existing session is untouched.

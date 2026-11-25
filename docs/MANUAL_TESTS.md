@@ -94,7 +94,40 @@ Her senaryoda B bölümündeki temel akışı (B-01…B-10) uygula ve sonucu şa
 
 ---
 
-## E. Grup görüşmesi (v0.1.0)
+## Öncelikli 20 test (v0.1.1)
+
+Önceki sürümlerin sonuçları geçmiş kayıt olarak durur; bu sürüm için geçerli değildir. Hepsi şu an **NOT RUN**.
+
+| # | Kontrol | İlgili ID |
+|---|---|---|
+| 1 | Üç kişi farklı UID'ler üzerinden aynı görüşmeye katılabiliyor | GF-02 |
+| 2 | Yeni kişi için herkesin onayı gerekiyor | GF-02, GF-07 |
+| 3 | Bir kişi reddedince mevcut görüşme bozulmuyor | GF-07 |
+| 4 | Yeni katılanın mikrofonu ve hoparlörü kapalı | GP-03, GP-04 |
+| 5 | Yeni katılımcı onaydan önce ses duymuyor | GP-01 |
+| 6 | Mikrofon kapatılınca hiçbir katılımcı sesini duymuyor | GP-06 |
+| 7 | Tarayıcının mikrofon göstergesi kayboluyor | GP-06 |
+| 8 | Hoparlör kapatılınca hiçbir katılımcının sesi duyulmuyor | GP-07 |
+| 9 | Her katılımcının konuşma dalgası doğru kişide hareket ediyor | GP-08 |
+| 10 | Grup mesajlaşması çalışıyor | GF-12 |
+| 11 | Yeni katılan eski mesajları görmüyor | GP-02 |
+| 12 | İlk başlatan ayrılınca diğerleri devam ediyor | GF-09 |
+| 13 | Davet linki onaysız bağlantı başlatmıyor | GF-13 |
+| 14 | 5'ten 6 kişiye geçince "düşük veri modu açık", 5'e dönünce kayboluyor; 6 kişide ses anlaşılır (aşağıdaki dinleme testi) | GF-04 |
+| 15 | 10 kişilik görüşme kurulabiliyor | GF-05 |
+| 16 | 11. katılımcı reddediliyor | GF-06 |
+| 17 | Farklı internet sağlayıcılarıyla bağlantı | GN-01 |
+| 18 | Windows Chrome ve Edge'de oyun sırasında görüşme sürüyor | GN-03 … GN-05 |
+| 19 | Uzun kullanımda CPU/RAM ve ses kalitesi kabul edilebilir | GN-06, GN-07 |
+| 20 | Sekme kapatılınca mikrofon kaydı ve ses iletişimi bitiyor; tarayıcı çökerse diğerlerinde en geç ~40 sn içinde "bağlantı koptu" | GF-10, GF-10b |
+
+### Düşük veri modu dinleme testi (16 kbps)
+
+1. 5 kişiyle bir cümleyi (ör. "Sol taraftan iki kişi geliyor") okuyun; bir dinleyici anlaşılırlığı 1–5 arasında puanlasın.
+2. 6. kişi katılsın ("düşük veri modu açık" görünmeli); aynı cümleyi tekrar okuyun ve puanlayın.
+3. Farkı ve anlaşılırlığı rapora yazın. Otomatik testler bunu ölçemez (sentetik bip sesi kullanır).
+
+## E. Grup görüşmesi (v0.1.0+)
 
 Yeni birini eklemek için: o kişi görüşmedeki **herhangi birinin** UID'sini girer veya davet linkini açar. Görüşmedeki **herkes** "Kabul et" demeden kimse katılamaz.
 
@@ -110,6 +143,7 @@ Yeni birini eklemek için: o kişi görüşmedeki **herhangi birinin** UID'sini 
 | GF-08 | Kimse yanıt vermez (~45 sn) | İstek zaman aşımına uğrar; görüşme bozulmaz |
 | GF-09 | Görüşmeyi başlatan kişi ayrılır | Diğerleri konuşmaya ve yazışmaya devam eder |
 | GF-10 | Bir katılımcı sekmesini kapatır | Diğerlerinde birkaç saniye içinde "ayrıldı" mesajı; görüşme devam eder |
+| GF-10b | Bir katılımcının tarayıcısı çöker / interneti tamamen kesilir | Diğerlerinde ~10 sn içinde "ses kesintide/yok", en geç ~40 sn içinde "bağlantı koptu"; görüşme devam eder |
 | GF-11 | Birden fazla kişi aynı anda konuşur | Herkes duyulur; her kişinin satırındaki dalga ayrı hareket eder |
 | GF-12 | Grup mesajlaşması | Herkesin mesajı herkese bir kez gelir |
 | GF-13 | Davet linki: "Davet linkini kopyala" → arkadaş linki açar | Arkadaşta "İstek gönder / Vazgeç" çıkar; tıklamadan istek gitmez; sonra normal onay |

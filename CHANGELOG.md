@@ -4,6 +4,14 @@ All notable user-facing changes. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### 0.1.1 — PA-006B group stability fixes (local, not deployed)
+
+- Fix: chat or a new join request from a just-joined person could be lost when it arrived before the join confirmation
+  (made the next join wait 45 s and fail).
+- Fix: a person whose browser crashed or lost the network stayed in the list forever and blocked new joins; now removed after
+  about 30 seconds of lost connection ("bağlantı koptu").
+- Fix: the low-bandwidth notice no longer claims success when the browser refused the bitrate limit.
+
 ### 0.1.0 — PA-006 group sessions (test build, not deployed yet)
 
 - Group voice and text chat for up to **10** people (full peer-to-peer mesh). Join through any member's UID.

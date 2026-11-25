@@ -2,53 +2,73 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.1.0 (deployed as test build) |
-| Current branch | `main` = `origin/main` (PA-006 commit `5308393` + this status update) |
+| Current version | 0.1.1 (local working tree, **not committed, not deployed**). Live site serves 0.1.0. |
+| Current branch | `main`; `origin/main` = `a741326` (0.1.0) |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
 | Test deployment | https://bisbiliroglu.github.io/psstamigo/ (0.1.0) |
-| Current task | PA-006 — group mesh (max 10) + user requests: invite links, low-bandwidth mode, compact layout |
-| Task status | REVIEW — deployed and verified live; manual group tests pending |
+| Current task | PA-006B — Group stability, privacy review & deployment readiness |
+| Task status | REVIEW — fixes implemented and verified locally; waiting for commit/push approval |
 | Last update | 2026-11-25 |
+
+Note: the PA-006B task brief listed the deployed version as 0.0.2; the repository shows 0.1.0 was already deployed (user-approved,
+commits `5308393`, `a741326`).
 
 ## Completed tasks
 
-- none accepted as DONE yet (real-network acceptance pending)
+- none accepted as DONE (real-network acceptance pending)
 
 ## In progress / review
 
-- PA-006 — REVIEW (0.1.0)
+- PA-006B — REVIEW (0.1.1 local)
+- PA-006 — REVIEW (0.1.0 live)
 - PA-015 — REVIEW (0.1.0 live)
 - PA-001 … PA-005, PA-007, PA-008 — REVIEW (see ROADMAP remaining criteria)
 
+## PA-006B findings
+
+| Severity | Finding | Status |
+|---|---|---|
+| HIGH | Vanished member (crash / network loss, no `leave`) stayed a member forever: data link ICE stayed `disconnected`, PeerJS closes only on `failed`; blocked all later admissions and kept the last user from going idle (verified in Chromium: not removed after 145 s) | Fixed (D-024); removed after about 36 s in Chromium |
+| HIGH | Cross-channel ordering: a newcomer's messages (chat, next `admit-propose`) that overtook the coordinator's commit were dropped; the next admission timed out after 45 s. Root cause of the 10-person e2e flake | Fixed (D-023); reproduced and covered by unit tests |
+| MEDIUM | A proposal from a member that already counted the pending newcomer was refused `busy` by a member still connecting it | Fixed (deferred proposal, D-023) |
+| MEDIUM | UI claimed "düşük veri modu açık" even if `setParameters` failed | Fixed (D-025) |
+| LOW | Invite link remains in browser history / clipboard / shared places; not a secret | Documented |
+| LOW | `SessionController` (~1200 lines) mixes admission, membership, link and media lifecycle | Not refactored; separate task proposed |
+| — (no CRITICAL) | No path found where audio is sent to or played from a peer without the local user's own approval + commit | Verified by code review, unit and e2e tests |
+
 ## Last verified build (2026-11-25, macOS, Node 26.13.1)
 
-- `npm audit`: 0 vulnerabilities; runtime dependencies unchanged (`peerjs@1.5.5` only)
+- `npm audit`: 0 vulnerabilities; runtime dependencies: `peerjs@1.5.5` only
 - `npm run typecheck`: pass
-- `vite build`: pass. Gzip 0.1.0 vs 0.0.2:
-  - JS 39.55 KB (was 35.17, +4.38: group protocol, admission, invite, bandwidth mode)
-  - CSS 1.90 KB (was 1.58, +0.32: new layout)
-  - HTML 2.60 KB (was 2.11, +0.49)
-  - Total ≈ 44.05 KB (was ≈ 38.86, +5.19)
-- No source maps; `noindex` + CSP present.
+- `npm run build`: pass. Gzip 0.1.1 vs 0.1.0:
+  - JS 40.15 KB (was 39.55, +0.60)
+  - CSS 1.90 KB (unchanged)
+  - HTML 2.61 KB (was 2.60)
+  - Total about 44.66 KB (was about 44.05)
+- No source maps; `noindex` + CSP present; `connect-src` = self + PeerJS Cloud only; no other URLs in the bundle.
 
 ## Last verified tests (2026-11-25)
 
-- Unit (Vitest): **141 / 141 passed** (8 files; was 100). Changes: 1:1 session tests rewritten for protocol v2 on the in-memory
-  mesh (19), new `group.test.ts` (33), `invite.test.ts` (2), protocol tests rewritten for v2 (+admission helpers).
-- Browser integration (Chromium, fake mic, real PeerJS Cloud): **12 tests** (was 8: +3-person, +4-person, +10-person, +invite).
-  - Production preview (CSP): **12 / 12 passed**.
-  - Dev server, final full run: **11 / 12 passed — 1 FAILED**: "ten people …" (`toHaveText` wait) in the full-suite run.
-    The same test then passed **6 times in a row** (5 isolated reruns + preview suite). Classified as **flaky under load**
-    (10–11 browser contexts with up to 18 peer connections each on one machine); not hidden, tracked as known issue.
-  - Earlier dev full run in this task: 12 / 12 passed.
-- GitHub Actions on `5308393`: deploy workflow (typecheck, unit, build, privacy checks, deploy) **success**;
-  browser-test workflow **12 / 12 passed** (incl. the 10-person test).
-- Live smoke test 0.1.0 (three Chromium contexts → https://bisbiliroglu.github.io/psstamigo/): **pass** — header `v0.1.0`,
-  invite-link join, C joins via B with both approvals, 3-way voice path connected, group chat, departures down to idle.
-  Live bundle hash equals local build (`index-DFl7mv5U.js`); `noindex` and CSP served.
-- Manual tests for 0.1.0: **not run**.
+- Unit (Vitest): **154 / 154 passed** (9 files; was 141: +13 in `groupStability.test.ts`).
+  Before the fixes, 3 of the new tests failed (ordering race x2, bandwidth state); they pass now.
+- Browser integration (Chromium, fake mic, real PeerJS Cloud): **13 tests** (was 12: + vanished peer).
+  - 10-person test: **5 / 5 runs passed** (isolated runs).
+  - Full dev suite: **3 / 3 runs, 13 / 13 each**.
+  - Full production-preview suite: **2 / 2 runs, 13 / 13 each** (one before and one after the 0.1.1 version bump).
+  - No failures in this task's runs. Earlier failure (PA-006, 1 of 7 runs) is explained by the ordering race; passing reruns alone
+    would not prove that, the deterministic unit reproduction does.
+- Measured outbound audio payload (getStats, synthetic beep, 5 runs): normal mode about 21.8–22.6 kbps per stream;
+  low-bandwidth mode about 11.2–11.4 kbps per stream (cap 16 kbps). Human voice quality not verified.
+- Vanished-peer detection (abrupt context close, Chromium): media "ses kesintide" after about 10 s, "ses yok" about 20 s, member
+  removed about 36 s.
+- Not run: GitHub Actions for 0.1.1 (no push), live smoke test for 0.1.1, manual tests.
 
 ## Manual test results
+
+### v0.1.0 / v0.1.1 (group)
+
+All group scenarios (MANUAL_TESTS.md "Öncelikli 20 test", E, F, G): **NOT RUN**. The v0.0.2 results below are historical and are
+not carried over to 0.1.x.
 
 Checklist: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 
@@ -80,9 +100,10 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 ## Known issues
 
 - Group membership is not atomic (D-017); simultaneous join requests can both be aborted (`busy`), candidates retry.
-- 10-person e2e test is flaky under local load (1 failure in 7 runs).
-- A crashed/killed tab (no `pagehide`) may be detected late by others (> 30 s observed in e2e with `context.close()`);
-  normal tab close / reload is immediate. Full detection/recovery is PA-011.
+- Vanished members are removed after about 30–40 s (D-024); there is no automatic rejoin (PA-011).
+- After a partial commit (coordinator dies mid-commit) member lists can differ until someone leaves (D-017); new admissions stop
+  while they differ. Convergence is PA-011.
+- 10 browser contexts on one machine do not represent 10 real computers; CPU/RAM per participant not measured.
 - Full mesh + no TURN: one unreachable pair blocks a newcomer. CPU/upload with 10 people not measured (D-019).
 - Low-bandwidth mode audio quality (16 kbps) not verified by ear (D-020).
 - No TURN: some NAT/CGNAT (esp. mobile) combinations cannot connect; an error is shown.
@@ -94,7 +115,8 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 ## Technical debt
 
 - Offer audit relies on PeerJS internal `options._payload` (now fail-closed; a PeerJS change breaks calls safely, D-010).
-- `SessionController` grew to ~1100 lines (admission + mesh + media); splitting admission into its own class may help later.
+- `SessionController` is about 1200 lines (admission + membership + link + media lifecycle). Proposed separate task PA-006C:
+  extract admission/membership into its own module without behavior change.
 - E2E depends on public PeerJS Cloud.
 - Bundled `webrtc-adapter` contains unused `getDisplayMedia` shim; PeerJS feature detection creates one closed, never-negotiated
   `RTCPeerConnection` with its default TURN config (verified harmless in e2e).
@@ -107,11 +129,15 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 - 2026-11-25: Approved initial commit, push and GitHub Pages enablement (0.0.1 deployed).
 - 2026-11-25: Approved roadmap reordering; PA-015 brought forward as test deployment only (D-015).
 - 2026-11-25: Approved commit + push of 0.0.2 review fixes (deployed).
+- 2026-11-25: Started PA-006B (stability/privacy review); AGENTS.md (created by Codex) left untracked pending a user decision.
 - 2026-11-25: Approved commit + push + deployment of 0.1.0.
 - 2026-11-25: Approved PA-006 plan (Phase A). During implementation requested: max **10** participants (D-019),
   low-bandwidth mode above 5 (D-020), invite link button (D-021), compact layout and nicer level animation (D-022).
 
 ## Next recommended task
 
-1. Group manual tests ([MANUAL_TESTS.md](MANUAL_TESTS.md) sections E–G) and the pending real-network tests (release gate).
-2. Then PA-011 (reconnection / crashed-peer detection) or PA-009 (audio settings, per-participant volume).
+1. User approval: commit + push 0.1.1 (auto-deploys), then live smoke test.
+2. Manual tests: "Öncelikli 20 test" in MANUAL_TESTS.md (release gate).
+3. **PA-011 before PA-009:** stability and membership convergence rank above usability in the project priorities; PA-006B showed
+   that vanished peers, partial commits and lack of rejoin are the main remaining group risks. PA-009 (per-participant volume,
+   device selection) is usability.

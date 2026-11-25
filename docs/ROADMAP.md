@@ -10,11 +10,12 @@ Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · C
 | PA-004 | Direct peer-to-peer voice communication | PA-003 | REVIEW* | Works on one machine; needs real-network verification |
 | PA-005 | Privacy-safe microphone and speaker lifecycle | PA-004 | REVIEW* | Implemented + automated checks; needs manual check of browser mic indicator |
 | PA-006 | P2P mesh group session management (max 10, D-019) + invite links, low-bandwidth mode, compact layout (user requests) | PA-003, PA-005 | REVIEW | 0.1.0 deployed 2026-11-25 and verified live (CI 12/12 e2e, live 3-person smoke); manual tests pending |
+| PA-006B | Group stability, privacy review & deployment readiness | PA-006 | REVIEW | Ordering race (D-023), vanished members (D-024), honest bandwidth state (D-025); 0.1.1 local, not deployed |
 | PA-007 | Ephemeral text messaging | PA-003 | REVIEW* | 1:1 done; group fan-out with PA-006 |
 | PA-008 | Audio activity indicators | PA-005 | REVIEW* | Real-signal meters done; threshold tuning with real voices |
 | PA-009 | Audio settings and individual volume controls | PA-005 | TODO | Device selection (`setSinkId`), per-participant volume |
 | PA-010 | Main UI implementation and usability | PA-006 | TODO | Compact layout done early on user request (D-022); remaining: usability review |
-| PA-011 | Reconnection and error recovery | PA-006 | TODO | ICE restart limits, signaling loss, safe defaults |
+| PA-011 | Reconnection and error recovery | PA-006B | TODO | ICE restart, rejoin after vanish, membership convergence after partial commit (D-017), signaling loss, safe defaults |
 | PA-012 | Security hardening and protocol validation | PA-006 | TODO | Group protocol validation, fuzzing |
 | PA-013 | Browser lifecycle and privacy verification | PA-011 | TODO | Edge/Chrome on Windows, BFCache, kill scenarios |
 | PA-014 | Performance and real-world network testing | PA-006 | TODO | CPU/RAM in game, 10-person mesh (D-019), low-bandwidth quality (D-020), CGNAT matrix |

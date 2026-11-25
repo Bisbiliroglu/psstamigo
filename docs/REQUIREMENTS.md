@@ -24,7 +24,7 @@ Status legend: ✅ implemented in spike · 🟡 partial · ⬜ not started
 | FR-016 | Connection recovery | 🟡 one bounded signaling reconnect; full engine PA-011 |
 | FR-017 | Connection diagnostics (state, RTT, jitter, loss, ICE, path type) | 🟡 "Teknik bağlantı bilgisi" panel; media status shows interruptions |
 | FR-018 | Invite link (`#join=<uid>`), explicit confirmation before sending a request (D-021) | ✅ automated |
-| FR-019 | Low-bandwidth voice mode above 5 participants (D-020) | ✅ automated (parameters); audio quality not verified |
+| FR-019 | Low-bandwidth voice mode above 5 participants (D-020) | ✅ automated: parameters + measured payload about 11 kbps vs 22 kbps normal (synthetic beep); human voice quality not verified |
 
 ## Session rules
 
@@ -41,6 +41,8 @@ Status legend: ✅ implemented in spike · 🟡 partial · ⬜ not started
 | SR-009 | All participants are visible; joins and leaves are announced. |
 | SR-010 | Only verifiably audio-only media offers are answered (fail-closed, D-010). |
 | SR-011 | The app does not run inside frames (D-012). |
+| SR-012 | A member that vanishes without leaving is removed after its data link stays disconnected for 30 s, or at once when it fails (D-024). |
+| SR-013 | Messages that overtake a membership commit on another channel are neither lost nor processed before the local commit (D-023). |
 
 ## Group requirements (PA-006)
 

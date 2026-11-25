@@ -146,3 +146,36 @@ address bar after reading. Links expire with the inviter's tab (UID is temporary
 User reported the 3-column card grid as hard to read. New layout: narrow sidebar (identity + invite, connect + requests) and one
 session card (controls, participants, chat, collapsed "Teknik bağlantı bilgisi" with an explanation). Level meters changed from
 rising "signal bars" to symmetric voice-wave bars, still driven only by the measured level. Single column on narrow screens.
+
+## D-023 — Cross-channel ordering: keep early messages, defer proposals (2026-11-25, PA-006B)
+
+**Finding (root cause of the 10-person e2e flake):** a newcomer commits as soon as the coordinator's `admit-commit` reaches it and
+may immediately chat or coordinate the next admission. Its messages travel on a *different* channel than the coordinator's commit
+to the other members, so they can arrive before that member's own commit and were silently dropped (lost chat; lost
+`admit-propose` => the next admission waited 45 s and failed). A proposal from an older member that already counted the newcomer was
+answered `busy` by a member still connecting the newcomer.
+**Decision:** a member keeps up to 16 messages from a not-yet-committed candidate and processes them (with the usual checks) only
+after its **own** commit; they are discarded on rollback, so nothing a rejected candidate sent is ever shown or acted on. The
+candidate does the same for members' messages that overtake its commit. A proposal whose member set equals ours plus our pending
+newcomer is deferred (one at a time) and judged after our admission commits or aborts. Authorization is unchanged: nothing is
+accepted on another peer's word.
+
+## D-024 — Detect vanished members via the data link's ICE state (2026-11-25, PA-006B)
+
+**Finding:** when a tab ends without `pagehide` (crash, killed process, power/network loss), Chrome keeps the data connection in
+ICE `disconnected` indefinitely and PeerJS only closes on `failed`; the peer stayed a member forever ("ghost"), blocked every later
+admission (its vote never came) and kept the last remaining user from returning to idle.
+**Decision:** a committed member whose application data link is ICE `failed`/`closed` is removed immediately; `disconnected` for
+`TIMEOUTS.peerLostMs` (30 s) => removed. Recovery within 30 s cancels it. No heartbeat traffic is added. Background timer throttling
+can only delay removal. Measured in Chromium: removed after about 36 s. Full reconnection remains PA-011.
+
+## D-025 — Bandwidth mode reports failures honestly (2026-11-25, PA-006B)
+
+`setParameters` results are collected; if the cap could not be applied to some sender the UI says
+"düşük veri modu istendi ama bazı bağlantılarda uygulanamadı" instead of claiming success. Stale results of an older group-size
+change are ignored (generation counter).
+
+## D-026 — Version 0.1.1 (2026-11-25, PA-006B)
+
+0.1.0 is already deployed; the PA-006B fixes change runtime behavior (member liveness, ordering, UI text), so the patch version is
+bumped so testers can tell builds apart. Protocol stays v2 (compatible with 0.1.0).

@@ -40,6 +40,11 @@ export const TIMEOUTS = {
   localSlackMs: 8_000,
   /** Committed member whose voice path is still not connected after this time is marked failed. */
   mediaSetupMs: 20_000,
+  /**
+   * A committed member whose application data link stays ICE-"disconnected" this long is treated as
+   * gone (crashed tab / lost network). PeerJS only closes on "failed", which Chrome may never reach.
+   */
+  peerLostMs: 30_000,
 } as const;
 
 export const LIMITS = {

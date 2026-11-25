@@ -30,7 +30,14 @@ Privacy requirements are mandatory, not optional features. They apply to every t
 - **One capture for all peers;** mic off detaches every sender and stops the capture at once (verified up to 10 peers in unit tests,
   3 peers with getStats in Chromium).
 - **No history to newcomers;** chat sender identity comes from the link, never from the payload; duplicates are dropped.
-- **Residual:** D-011 still applies to the coordinator; membership is not atomic (D-017).
+- **Early messages are inert:** anything a candidate sends before our own commit is held (max 16) and never shown or acted on;
+  it is discarded if the admission is rolled back (D-023).
+- **Vanished members stop receiving audio:** a member whose transport dies is removed after at most 30 s of ICE `disconnected`
+  (its sender is detached, its playback stopped) instead of staying a "ghost" member (D-024).
+- **Residual:** D-011 still applies to the coordinator; membership is not atomic (D-017): if the coordinator dies while its commit
+  reached only some peers, the peers that did not commit roll back and close their links to the newcomer, while others keep it;
+  each peer only sends audio to peers it has committed itself, so no one receives audio without their own approval, but lists
+  can differ until someone leaves. Convergence is PA-011.
 
 ## Security concepts (do not conflate)
 
@@ -62,7 +69,7 @@ Voice content, chat content, who talks to whom and when, IP addresses, the micro
 |---|---|---|
 | Forged approval / introduction by a member or candidate | Votes bound to link identity; each member enforces its own approval for mesh-hello and media | — |
 | Stale or replayed admission messages | 128-bit admission ids, finished-id memory (32), session id and member-set checks | — |
-| Invite link leaks | Fragment-only (never sent to server), explicit confirmation, normal approval still required | Link = UID: D-011 applies; valid while the inviter's tab is open |
+| Invite link leaks | Fragment-only (never sent to server), explicit confirmation, normal approval still required, fragment removed from the address bar after reading | Link = UID: D-011 applies; valid while the inviter's tab is open. The full link can remain in browser history (visited URL), in the clipboard and wherever it was shared. **An invite link is not a secret or an authentication token.** |
 | Stranger guesses / learns a UID and calls | UID ≈ 59 bits random; every request needs explicit acceptance; no global directory | A known UID can still send request spam ⇒ rate/pending/handshake limits |
 | **Requester learns your IP before you accept** | None possible with the current design: PeerJS answers every incoming *data* connection automatically, so ICE candidates (incl. your public IP via STUN) are exchanged when the request arrives, before you click Accept. No media or chat is exchanged before acceptance. | **Accepted, documented (D-011).** Share your UID only with people you would share your IP with. |
 | Clickjacking: a malicious page embeds PsstAmigo with `allow="microphone"` | App refuses to start when framed (`main.ts`) | Meta CSP cannot set `frame-ancestors`; GitHub Pages cannot send `X-Frame-Options` |

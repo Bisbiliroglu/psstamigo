@@ -48,6 +48,10 @@ class PeerJsDataLink implements DataLink {
   onError(cb: (error: Error) => void): void {
     this.conn.on("error", cb);
   }
+
+  getPeerConnection(): RTCPeerConnection | null {
+    return this.conn.peerConnection ?? null;
+  }
 }
 
 /**

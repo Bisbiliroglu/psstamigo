@@ -107,6 +107,9 @@ export class FakeDataLink implements DataLink {
     this.closeCbs.push(cb);
   }
   onError(): void {}
+  getPeerConnection(): RTCPeerConnection | null {
+    return null;
+  }
   // --- test helpers
   open(): void {
     this.isOpen = true;

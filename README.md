@@ -62,10 +62,15 @@ The page has `<meta name="robots" content="noindex, nofollow">` and a production
   acceptance). Share your UID only with people you trust.
 - Audio and data are encrypted in transit by WebRTC (DTLS-SRTP / DTLS), but there is **no authenticated end-to-end identity
   verification**. A UID is not proof of who someone is.
+- **Signaling is trusted, not verified:** PeerJS Cloud does not carry audio or chat in normal operation, but it relays the
+  encryption fingerprints, so a malicious or compromised signaling server could sit in the middle of a call. This is not mitigated.
 - The app cannot prevent other participants from recording on their own devices with external software.
 - Full mesh: every participant connects to every other one. Without TURN, a single pair that cannot connect prevents a newcomer
   from joining. With many people CPU/upload use grows (10 people = 9 outgoing voice streams); not yet measured.
-- Group membership is not atomic: after a crash mid-join, participants may briefly see different lists.
+- Group membership is not atomic: after a crash mid-join, participants may see different lists until someone leaves
+  (each still sends audio only to people it approved itself).
+- A participant whose browser crashes or loses the network is removed by the others after about 30–40 seconds.
+- An invite link is not a secret: it contains your temporary UID and can stay in browser history or wherever it was shared.
 - Chrome and Edge on Windows are the primary targets. Other browsers are untested.
 
 Full details: [docs/PRIVACY_SECURITY.md](docs/PRIVACY_SECURITY.md).

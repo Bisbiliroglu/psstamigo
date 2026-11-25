@@ -12,6 +12,7 @@ Automated and manual results are reported separately. Manual / real-network test
 | `tests/unit/fakeNetwork.ts` | in-memory mesh: real SessionController + MicrophoneController + SpeakerController per node |
 | `tests/unit/group.test.ts` | 3-person admission via non-initiator, 10 + 1 capacity, all-member approval, single rejection, vote timeout, duplicate/forged approval, own-approval enforcement, stale snapshot, replay/foreign sid, simultaneous joins, duplicate links, video/unreadable/invalid offers, partial failure rollback, candidate disconnect, initiator/coordinator/member departure, killed tab, last-member cleanup, commit-gated mic/speaker, mic/speaker change during admission, mic off for all peers, pending getUserMedia races, stale callbacks, group chat fan-out/dedup/impersonation/no history, chat with failed media, idempotent cleanup, low-bandwidth mode |
 | `tests/unit/invite.test.ts` | invite URL in fragment, validation |
+| `tests/unit/groupStability.test.ts` | PA-006B: commit overtaken by newcomer messages (held delivery), deferred proposal, early messages dropped on rollback + late commit ignored, v1/missing/malformed/future protocol versions, 15 join/leave cycles leave no links/timers/senders/players, bandwidth failure reported, no redundant setParameters, vanished member removal after 30 s / recovery within grace / last member to idle |
 | `tests/unit/session.test.ts` (rewritten for v2) | authorization (no media before accept, stranger/duplicate/video calls closed), handshake & request timeouts, busy, outgoing flow, reject, unavailable UID, chat rate limit, leave & dispose |
 | `tests/unit/policy.test.ts` | static privacy checks on app sources (incl. no track `clone()`, no TURN), PeerJS import boundary, STUN-only config, noindex |
 | `tests/unit/sdpPolicy.test.ts` | fail-closed offer audit: audio-only (+PeerJS data channel) accepted; video, unreadable, invalid, oversized rejected |
@@ -35,6 +36,10 @@ An init script observes `getUserMedia`, `RTCPeerConnection` and media playback w
 | group: four people | one member rejects, retry, initiator leaves |
 | group: ten people | full mesh 10/10, low-bandwidth mode (all senders 16 kbps), 11th rejected as full, back to normal at 5 |
 | invite link | banner, fragment removed, nothing sent before click, normal approval |
+| vanished peer | abrupt context close (no `leave`): both remaining members drop it (measured about 36 s), mic state kept |
+
+Group tests attach a privacy-safe state dump on failure (status text, participant media states, admission status, peer connection
+states; no IPs, no chat text). The 10-person test also measures outbound audio payload bitrate with `getStats()`.
 
 The main flow additionally asserts: no CSP violations, and every peer connection that starts ICE is STUN-only
 (PeerJS's load-time feature-detection connection never negotiates).

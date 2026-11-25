@@ -4,7 +4,9 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 import {
+  diagnosticsDump,
   inboundAudioPackets,
+  measuredOutboundBitrates,
   joinVia,
   meterLevel,
   openClient,
@@ -17,12 +19,25 @@ import {
   waitForParticipantActivity,
 } from "./helpers";
 
+/** Pages of the running test, for the privacy-safe failure dump. */
+let tracked: Page[] = [];
+test.beforeEach(() => {
+  tracked = [];
+});
+test.afterEach(async ({}, testInfo) => {
+  if (testInfo.status !== testInfo.expectedStatus && tracked.length > 0) {
+    await testInfo.attach("group-state.txt", { body: await diagnosticsDump(tracked), contentType: "text/plain" });
+    console.log(`[group diagnostics]\n${await diagnosticsDump(tracked)}`);
+  }
+});
+
 test("three-person group: approval gate, audio, chat, mic/speaker privacy, departures", async ({ browser }) => {
   test.setTimeout(180_000);
   const A = await openClient(browser);
   const B = await openClient(browser);
   const C = await openClient(browser);
   const [a, b, c] = [A.page, B.page, C.page];
+  tracked = [a, b, c];
   const [aUid, bUid, cUid] = [await uidOf(a), await uidOf(b), await uidOf(c)];
 
   // 1–2. A and B connect and talk.
@@ -137,6 +152,7 @@ test("four people: one member rejects; initiator leaves and the rest continue", 
   test.setTimeout(180_000);
   const clients = await Promise.all([0, 1, 2, 3].map(() => openClient(browser)));
   const [a, b, c, d] = clients.map((x) => x.page) as [Page, Page, Page, Page];
+  tracked = [a, b, c, d];
   await joinVia(b, a, [a]);
   await joinVia(c, b, [a, b]);
 
@@ -165,6 +181,7 @@ test("ten people form a full mesh with low-bandwidth mode; the eleventh is rejec
   test.setTimeout(480_000);
   const clients = await Promise.all(Array.from({ length: 11 }, () => openClient(browser)));
   const pages = clients.map((x) => x.page);
+  tracked = pages;
   for (let i = 1; i < 10; i++) {
     await joinVia(pages[i]!, pages[i - 1]!, pages.slice(0, i));
     if (i === 4) {
@@ -173,6 +190,10 @@ test("ten people form a full mesh with low-bandwidth mode; the eleventh is rejec
         await expect(p.locator("#session-status")).toHaveText("Görüşmede 5/10 kişi var.");
         await expect.poll(async () => (await senderMaxBitrates(p)).every((b) => b === null)).toBe(true);
       }
+      await pages[0]!.locator("#mic-btn").click();
+      const normal = await measuredOutboundBitrates(pages[0]!);
+      console.log(`[bitrate] 5 people, normal mode, measured payload bps per stream: ${normal.join(", ")}`);
+      await pages[0]!.locator("#mic-btn").click();
     }
   }
   for (const p of pages.slice(0, 10)) {
@@ -183,6 +204,16 @@ test("ten people form a full mesh with low-bandwidth mode; the eleventh is rejec
     await expect(p.getByTestId("participant").locator(".media")).toHaveText(Array(9).fill("ses bağlı"), { timeout: 60_000 });
     await expect.poll(async () => await senderMaxBitrates(p)).toEqual(Array(9).fill(16_000));
   }
+  // Measured (not just configured) bitrate in low-bandwidth mode with a live synthetic mic.
+  await pages[0]!.locator("#mic-btn").click();
+  await expect(pages[0]!.locator("#mic-label")).toHaveText("Mikrofon açık");
+  const low = await measuredOutboundBitrates(pages[0]!);
+  console.log(`[bitrate] 10 people, low-bandwidth mode, measured payload bps per stream: ${low.join(", ")}`);
+  expect(low).toHaveLength(9);
+  expect(low.every((bps) => bps > 0 && bps <= 16_000 * 1.25)).toBe(true);
+  await pages[0]!.locator("#mic-btn").click();
+  await expect.poll(async () => (await probe(pages[0]!)).sendersWithTrack).toBe(0);
+
   const extra = pages[10]!;
   await requestTo(extra, await uidOf(pages[3]!));
   await expect(extra.locator("#notice")).toContainText("kapasitesi dolu", { timeout: 20_000 });
@@ -200,6 +231,7 @@ test("ten people form a full mesh with low-bandwidth mode; the eleventh is rejec
 
 test("invite link: asks before sending a request, then the normal approval applies", async ({ browser }) => {
   const A = await openClient(browser);
+  tracked = [A.page];
   const aUid = await uidOf(A.page);
   const context = await browser.newContext();
   const b = await context.newPage();
@@ -216,4 +248,25 @@ test("invite link: asks before sending a request, then the normal approval appli
   await expect(b.locator("#session-status")).toHaveText("Görüşmede 2/10 kişi var.", { timeout: 45_000 });
   await A.context.close();
   await context.close();
+});
+
+test("a peer that vanishes without closing (no pagehide) is removed by the others", async ({ browser }) => {
+  test.setTimeout(150_000);
+  const clients = await Promise.all([0, 1, 2].map(() => openClient(browser)));
+  const [a, b, c] = clients.map((x) => x.page) as [Page, Page, Page];
+  tracked = [a, b];
+  await joinVia(b, a, [a]);
+  await joinVia(c, b, [a, b]);
+  await a.locator("#mic-btn").click();
+  await expect(a.locator("#mic-label")).toHaveText("Mikrofon açık");
+  const t0 = Date.now();
+  void clients[2]!.context.close(); // abrupt: no leave message is sent
+  for (const p of [a, b]) {
+    await expect(p.locator("#session-status")).toHaveText("Görüşmede 2/10 kişi var.", { timeout: 75_000 });
+  }
+  console.log(`[vanish] removed by both remaining members after ${Date.now() - t0} ms`);
+  await expect(a.locator("#chat-log")).toContainText("bağlantı koptu");
+  await expect(a.locator("#mic-label")).toHaveText("Mikrofon açık"); // remaining members keep their state
+  expect((await probe(a)).sendersWithMic).toBe(1);
+  for (const x of clients.slice(0, 2)) await x.context.close();
 });

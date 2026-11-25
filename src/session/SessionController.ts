@@ -74,6 +74,8 @@ export interface SessionSnapshot {
   readonly capacity: { readonly count: number; readonly max: number };
   /** True while outbound voice bitrate is capped because the group is large (D-020). */
   readonly lowBandwidth: boolean;
+  /** True if the bitrate cap could not be applied to at least one sender (UI must not claim success). */
+  readonly bandwidthLimitFailed: boolean;
 }
 
 /** Audio side effects, implemented by the app layer (keeps session free of Web Audio). */
@@ -116,6 +118,10 @@ interface PeerLink {
   chatIds: BoundedSet<string>;
   /** Fired once when the voice path of an uncommitted link connects. */
   onReady: (() => void) | null;
+  /** Liveness watch of the data link's peer connection (committed members only). */
+  dataPc: RTCPeerConnection | null;
+  dataListener: (() => void) | null;
+  lostTimer: Timer | null;
 }
 
 interface Admission {
@@ -137,6 +143,11 @@ interface Admission {
   requestLink: DataLink | null;
   /** Our own link with the candidate once connecting. */
   candidateLink: PeerLink | null;
+  /**
+   * Messages the candidate sent on its link before WE committed it (it may have received the
+   * coordinator's commit earlier over another channel). Replayed after our own commit, dropped on abort.
+   */
+  early: ProtocolMessage[];
   timer: Timer;
 }
 
@@ -149,8 +160,13 @@ interface Joining {
   expected: MemberInfo[];
   links: Map<string, PeerLink>;
   pendingMesh: Map<string, DataLink>;
+  /** Member messages that overtook the coordinator's commit; replayed after commitJoin(). */
+  early: Array<{ from: string; msg: ProtocolMessage }>;
   timer: Timer;
 }
+
+/** Max messages kept from a peer whose membership we have not committed yet. */
+const EARLY_LIMIT = 16;
 
 const REJECT_TEXT: Record<RejectReason, string> = {
   declined: "Katılım isteği reddedildi.",
@@ -185,10 +201,11 @@ function admissionAbortText(reason: RejectReason, name: string): string {
 }
 
 /** Sets (or clears, with null) the max bitrate of every encoding of an audio sender. Errors are ignored. */
-async function setVoiceBitrate(sender: RTCRtpSender, bps: number | null): Promise<void> {
+/** Returns true if the sender now has the requested cap (or nothing had to change). */
+async function setVoiceBitrate(sender: RTCRtpSender, bps: number | null): Promise<boolean> {
   try {
     const params = sender.getParameters();
-    if (!params.encodings || params.encodings.length === 0) return; // not negotiated yet; applied again on next change
+    if (!params.encodings || params.encodings.length === 0) return bps === null; // not negotiated: cap not applied
     let changed = false;
     for (const enc of params.encodings) {
       if (bps === null) {
@@ -202,8 +219,9 @@ async function setVoiceBitrate(sender: RTCRtpSender, bps: number | null): Promis
       }
     }
     if (changed) await sender.setParameters(params);
+    return true;
   } catch {
-    /* sender closed or parameters not settable: keep default bitrate */
+    return false; // sender closed or parameters not settable: default bitrate stays, reported to the UI
   }
 }
 
@@ -227,6 +245,13 @@ export class SessionController {
   private readonly events = new Emitter<{ change: SessionSnapshot }>();
   private readonly unsubscribers: Array<() => void> = [];
   private lowBandwidth = false;
+  private bandwidthLimitFailed = false;
+  private bandwidthGeneration = 0;
+  /**
+   * A proposal received while our own admission was still connecting; it can only be judged
+   * after that admission commits or aborts (cross-channel ordering, PA-006B).
+   */
+  private deferredProposal: { from: string; msg: Extract<ProtocolMessage, { t: "admit-propose" }> } | null = null;
 
   constructor(private readonly deps: SessionDeps) {
     const s = deps.signaling;
@@ -285,6 +310,7 @@ export class SessionController {
       notice: this.notice,
       capacity: { count: this.members.size + 1, max: MAX_PARTICIPANTS },
       lowBandwidth: this.lowBandwidth,
+      bandwidthLimitFailed: this.bandwidthLimitFailed,
     };
   }
 
@@ -341,6 +367,9 @@ export class SessionController {
       committed: false,
       chatIds: new BoundedSet<string>(LIMITS.chatDedup),
       onReady: null,
+      dataPc: null,
+      dataListener: null,
+      lostTimer: null,
     };
   }
 
@@ -388,7 +417,12 @@ export class SessionController {
 
     const adm = this.admission;
     if (adm && (adm.requestLink === link || adm.candidateLink?.data === link)) {
-      if (msg.t === "cancel") this.abortAdmission(adm, "declined", `${adm.candidateName || adm.candidate} isteğini iptal etti.`);
+      if (msg.t === "cancel") {
+        this.abortAdmission(adm, "declined", `${adm.candidateName || adm.candidate} isteğini iptal etti.`);
+      } else if (adm.candidateLink?.data === link && adm.stage === "connecting" && adm.early.length < EARLY_LIMIT) {
+        // Not a member for us yet: keep (bounded) and judge only after our own commit; nothing is shown now.
+        adm.early.push(msg);
+      }
     }
   }
 
@@ -477,6 +511,7 @@ export class SessionController {
       ready: new Set(),
       requestLink: link,
       candidateLink: null,
+      early: [],
       timer: setTimeout(() => this.abortAdmission(adm, "timeout"), TIMEOUTS.admissionVoteMs),
     };
     this.admission = adm;
@@ -552,6 +587,7 @@ export class SessionController {
     this.chat.addSystem(`${label(pl)} görüşmeye katıldı.`);
     this.notice = null;
     this.emit();
+    this.flushDeferredProposal();
   }
 
   /** Coordinator: abort and inform everyone. Non-coordinator: local rollback only. */
@@ -580,7 +616,9 @@ export class SessionController {
       this.sid = null; // first admission failed: no session was created
       if (reason !== "declined" || text) this.notice = { kind: "info", text: message };
     }
+    adm.early.length = 0; // never process anything a rolled-back candidate sent
     this.emit();
+    this.flushDeferredProposal();
   }
 
   private finishAdmission(adm: Admission): void {
@@ -630,6 +668,17 @@ export class SessionController {
     const vote = (v: Vote): void =>
       from.data.send({ t: "admit-vote", v: 2, sid: msg.sid, aid: msg.aid, vote: v } satisfies ProtocolMessage);
     if (this.finished.has(msg.aid) || this.admission?.aid === msg.aid) return; // replay
+    const own = this.admission;
+    if (
+      own &&
+      own.stage === "connecting" &&
+      !this.deferredProposal &&
+      sameMembers(msg.members, [me, ...this.members.keys(), own.candidate])
+    ) {
+      // The proposer already counts our pending newcomer: wait for our own commit/abort, then judge.
+      this.deferredProposal = { from: from.peerId, msg };
+      return;
+    }
     if (this.admission || this.joining) return vote("busy");
     if (msg.candidate === me || this.members.has(msg.candidate)) return vote("conflict");
     const mine = memberSnapshot([me, ...this.members.keys()]);
@@ -649,6 +698,7 @@ export class SessionController {
       ready: new Set(),
       requestLink: null,
       candidateLink: null,
+      early: [],
       timer: setTimeout(() => this.abortLocal(adm, "timeout"), TIMEOUTS.admissionVoteMs + TIMEOUTS.localSlackMs),
     };
     this.admission = adm;
@@ -694,10 +744,23 @@ export class SessionController {
     this.finishAdmission(adm);
     this.commitLink(pl);
     this.chat.addSystem(`${label(pl)} görüşmeye katıldı.`);
+    // Now a member for us too: process what it sent before our commit arrived (same checks as always).
+    for (const early of adm.early.splice(0)) {
+      if (this.members.get(pl.peerId) !== pl) break;
+      this.handleMemberMessage(pl, early);
+    }
     this.emit();
+    this.flushDeferredProposal();
   }
 
-  // ================================================================ user decisions
+  /** Re-evaluates a proposal that had to wait for our previous admission to finish. */
+  private flushDeferredProposal(): void {
+    const d = this.deferredProposal;
+    this.deferredProposal = null;
+    if (!d) return;
+    const from = this.members.get(d.from);
+    if (from) this.handleMemberMessage(from, d.msg);
+  }
 
   acceptRequest(id: number): void {
     const adm = this.admission;
@@ -756,6 +819,7 @@ export class SessionController {
       expected: [],
       links: new Map(),
       pendingMesh: new Map(),
+      early: [],
       timer: setTimeout(() => this.failJoining("Karşı tarafa ulaşılamadı (zaman aşımı).", true), TIMEOUTS.dataOpenMs),
     };
     this.joining = j;
@@ -796,6 +860,7 @@ export class SessionController {
           if (msg.sid === j.sid && msg.aid === j.aid) this.failJoining(REJECT_TEXT[msg.reason], false);
           return;
         default:
+          this.keepEarly(j, link.peerId, msg);
           return;
       }
     }
@@ -809,6 +874,15 @@ export class SessionController {
       this.emit();
     } else if (msg.t === "join-reject") {
       this.failJoining("Katılımcılardan biri bağlantıyı kabul etmedi.", true);
+    } else if (j.links.get(link.peerId)?.data === link) {
+      this.keepEarly(j, link.peerId, msg);
+    }
+  }
+
+  /** A member that already committed us may talk before our commit arrives: keep it (bounded). */
+  private keepEarly(j: Joining, from: string, msg: ProtocolMessage): void {
+    if (j.stage === "connecting" && "sid" in msg && msg.sid === j.sid && j.early.length < EARLY_LIMIT) {
+      j.early.push({ from, msg });
     }
   }
 
@@ -855,6 +929,10 @@ export class SessionController {
     for (const pl of j.links.values()) this.commitLink(pl);
     this.chat.addSystem("Görüşmeye katıldınız.");
     this.notice = null;
+    for (const { from, msg } of j.early.splice(0)) {
+      const member = this.members.get(from);
+      if (member) this.handleMemberMessage(member, msg);
+    }
     this.emit();
   }
 
@@ -998,6 +1076,7 @@ export class SessionController {
     p.committed = true;
     p.onReady = null;
     this.members.set(p.peerId, p);
+    this.watchDataLiveness(p);
     if (p.sender) this.deps.media.addSender(p.peerId, p.sender);
     if (p.remoteStream) this.deps.media.addRemoteStream(p.peerId, p.remoteStream);
     this.applyBandwidthMode();
@@ -1011,10 +1090,47 @@ export class SessionController {
     }
   }
 
+  /**
+   * Detects members that vanished without a goodbye (crashed tab, lost network): data link ICE
+   * "failed"/"closed" ⇒ gone now; "disconnected" for TIMEOUTS.peerLostMs ⇒ gone. No extra traffic.
+   */
+  private watchDataLiveness(p: PeerLink): void {
+    const pc = p.data.getPeerConnection();
+    if (!pc) return;
+    const check = (): void => {
+      if (this.members.get(p.peerId) !== p || p.dataPc !== pc) return;
+      const state = pc.iceConnectionState;
+      if (state === "failed" || state === "closed") {
+        this.removeMember(p.peerId, `${label(p)} ile bağlantı koptu.`);
+      } else if (state === "disconnected") {
+        if (!p.lostTimer) {
+          p.lostTimer = setTimeout(() => {
+            p.lostTimer = null;
+            if (this.members.get(p.peerId) === p && pc.iceConnectionState === "disconnected") {
+              this.removeMember(p.peerId, `${label(p)} ile bağlantı koptu.`);
+            }
+          }, TIMEOUTS.peerLostMs);
+        }
+      } else if (p.lostTimer) {
+        clearTimeout(p.lostTimer);
+        p.lostTimer = null;
+      }
+    };
+    p.dataPc = pc;
+    p.dataListener = check;
+    pc.addEventListener("iceconnectionstatechange", check);
+    check();
+  }
+
   /** Releases everything that belongs to ONE peer. Shared capture / AudioContext are untouched. */
   private teardownLink(p: PeerLink): void {
     if (p.mediaTimer) clearTimeout(p.mediaTimer);
     p.mediaTimer = null;
+    if (p.lostTimer) clearTimeout(p.lostTimer);
+    p.lostTimer = null;
+    if (p.dataPc && p.dataListener) p.dataPc.removeEventListener("iceconnectionstatechange", p.dataListener);
+    p.dataPc = null;
+    p.dataListener = null;
     p.onReady = null;
     if (p.pc && p.pcListener) {
       p.pc.removeEventListener("iceconnectionstatechange", p.pcListener);
@@ -1058,11 +1174,24 @@ export class SessionController {
   private applyBandwidthMode(): void {
     const low = this.members.size + 1 > LOW_BANDWIDTH_THRESHOLD;
     this.lowBandwidth = low;
-    for (const p of this.members.values()) if (p.sender) void setVoiceBitrate(p.sender, low ? LOW_BANDWIDTH_BITRATE_BPS : null);
+    const gen = ++this.bandwidthGeneration;
+    const results = [...this.members.values()]
+      .filter((p) => p.sender)
+      .map((p) => setVoiceBitrate(p.sender as RTCRtpSender, low ? LOW_BANDWIDTH_BITRATE_BPS : null));
+    void Promise.all(results).then((ok) => {
+      if (gen !== this.bandwidthGeneration || this.disposed) return; // a newer change superseded this one
+      const failed = low && ok.includes(false);
+      if (failed !== this.bandwidthLimitFailed) {
+        this.bandwidthLimitFailed = failed;
+        this.emit();
+      }
+    });
   }
 
   private endSession(info: string | null): void {
     this.sid = null;
+    this.deferredProposal = null;
+    this.bandwidthLimitFailed = false;
     this.lowBandwidth = false;
     this.chat.clear(); // ephemeral: history is gone when the session ends
     if (info) this.notice = { kind: "info", text: info };

@@ -197,7 +197,13 @@ export class View {
       s.phase === "requesting"
         ? JOIN_STAGE_TEXT[s.joinStage ?? "contacting"]
         : active
-          ? `Görüşmede ${s.capacity.count}/${s.capacity.max} kişi var.${s.lowBandwidth ? " Kalabalık grup: düşük veri modu açık." : ""}`
+          ? `Görüşmede ${s.capacity.count}/${s.capacity.max} kişi var.${
+              s.lowBandwidth
+                ? s.bandwidthLimitFailed
+                  ? " Düşük veri modu istendi ama bazı bağlantılarda uygulanamadı."
+                  : " Kalabalık grup: düşük veri modu açık."
+                : ""
+            }`
           : "Aktif görüşme yok.";
 
     const seen = new Set<string>();

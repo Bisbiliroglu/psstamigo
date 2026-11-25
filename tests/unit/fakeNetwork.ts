@@ -17,6 +17,8 @@ import { FakePeerConnection, FakeSender, FakeStream, FakeTrack } from "./fakes";
 type Task = () => void;
 
 export class NetDataLink implements DataLink {
+  /** Fake transport of this side; ICE state can be driven by tests (see FakeNetwork.vanish). */
+  readonly pc = new FakePeerConnection([]);
   isOpen = false;
   closed = false;
   other!: NetDataLink;
@@ -33,9 +35,13 @@ export class NetDataLink implements DataLink {
     this.sent.push(message);
     const copy = JSON.parse(JSON.stringify(message)) as unknown;
     const target = this.other;
-    this.net.enqueue(() => {
+    const deliver = (): void => {
       if (!target.closed) target.receive(copy);
-    });
+    };
+    // Test hook: hold selected message types on one direction to reorder delivery across channels.
+    const t = (copy as { t?: string }).t ?? "";
+    if (this.net.isHeld(this.other.peerId, this.peerId, t)) this.net.held.push(deliver);
+    else this.net.enqueue(deliver);
   }
   close(): void {
     if (this.closed) return;
@@ -61,6 +67,9 @@ export class NetDataLink implements DataLink {
     this.closeCbs.push(cb);
   }
   onError(): void {}
+  getPeerConnection(): RTCPeerConnection | null {
+    return this.pc as unknown as RTCPeerConnection;
+  }
   open(): void {
     if (this.closed) return;
     this.isOpen = true;
@@ -173,6 +182,23 @@ export class FakeNetwork {
   readonly mediaLinks: NetMediaLink[] = [];
   /** When true, getUserMedia stays pending until resolved by the test. */
   manualGum = false;
+  /** Held deliveries (see hold()). */
+  readonly held: Task[] = [];
+  private readonly holds = new Set<string>();
+
+  /** Hold messages of type `t` sent from `from` to `to` until release() (cross-channel reordering). */
+  hold(from: string, to: string, t: string): void {
+    this.holds.add(`${from}>${to}:${t}`);
+  }
+
+  isHeld(from: string, to: string, t: string): boolean {
+    return this.holds.has(`${from}>${to}:${t}`);
+  }
+
+  release(): void {
+    this.holds.clear();
+    for (const task of this.held.splice(0)) this.enqueue(task);
+  }
 
   enqueue(task: Task): void {
     this.queue.push(task);
@@ -270,6 +296,16 @@ export class FakeNetwork {
     });
     this.nodes.set(uid, node);
     return node;
+  }
+
+  /**
+   * The node disappears WITHOUT closing anything (crash / power loss): the others only see their
+   * transports go ICE-"disconnected" and never get a close event.
+   */
+  vanish(uid: string): void {
+    this.nodes.delete(uid);
+    for (const l of this.dataLinks) if (l.peerId === uid && !l.closed) l.pc.setIce("disconnected");
+    for (const m of this.mediaLinks) if (m.peerId === uid && !m.closed) m.pc?.setIce("disconnected");
   }
 
   /** Removes a node abruptly (tab killed): all its links close for the others. */

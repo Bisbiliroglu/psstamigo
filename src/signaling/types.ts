@@ -16,6 +16,8 @@ export interface DataLink {
   onData(cb: (data: unknown) => void): void;
   onClose(cb: () => void): void;
   onError(cb: (error: Error) => void): void;
+  /** Underlying peer connection of this data link (for liveness of committed members only). */
+  getPeerConnection(): RTCPeerConnection | null;
 }
 
 export interface MediaLink {

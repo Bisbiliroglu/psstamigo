@@ -241,3 +241,61 @@ export async function senderMaxBitrates(page: Page): Promise<Array<number | null
       .map((s) => s.getParameters().encodings[0]?.maxBitrate ?? null);
   });
 }
+
+/**
+ * Measured outbound audio payload bitrate (bits/s) per outbound-rtp stream over `ms`,
+ * from getStats bytesSent deltas (RTP headers excluded by definition of bytesSent).
+ */
+export async function measuredOutboundBitrates(page: Page, ms = 5_000): Promise<number[]> {
+  return page.evaluate(async (windowMs) => {
+    const p = (window as unknown as { __probe: { pcs: RTCPeerConnection[] } }).__probe;
+    const read = async (): Promise<Map<string, { bytes: number; t: number }>> => {
+      const out = new Map<string, { bytes: number; t: number }>();
+      for (const [i, pc] of p.pcs.entries()) {
+        if (pc.signalingState === "closed") continue;
+        const stats = await pc.getStats();
+        stats.forEach((r: { type: string; kind?: string; id: string; bytesSent?: number; timestamp: number }) => {
+          if (r.type === "outbound-rtp" && r.kind === "audio") out.set(`${i}:${r.id}`, { bytes: r.bytesSent ?? 0, t: r.timestamp });
+        });
+      }
+      return out;
+    };
+    const a = await read();
+    await new Promise((r) => setTimeout(r, windowMs));
+    const b = await read();
+    const rates: number[] = [];
+    for (const [k, v] of b) {
+      const prev = a.get(k);
+      if (prev && v.t > prev.t) rates.push(Math.round(((v.bytes - prev.bytes) * 8 * 1000) / (v.t - prev.t)));
+    }
+    return rates;
+  }, ms);
+}
+
+/** Privacy-safe state dump for failure diagnostics: counts and states only (no IPs, no chat text). */
+export async function diagnosticsDump(pages: Page[]): Promise<string> {
+  const lines: string[] = [];
+  for (const [i, page] of pages.entries()) {
+    if (page.isClosed()) {
+      lines.push(`#${i}: closed`);
+      continue;
+    }
+    const d = await page
+      .evaluate(() => {
+        const p = (window as unknown as { __probe?: { pcs: RTCPeerConnection[] } }).__probe;
+        const pcs = p?.pcs ?? [];
+        return {
+          status: document.getElementById("session-status")?.textContent ?? "",
+          signal: document.getElementById("signal-status")?.dataset["state"] ?? "",
+          participants: [...document.querySelectorAll('[data-testid="participant"] .media')].map((e) => e.textContent),
+          incoming: [...document.querySelectorAll('[data-testid="admission-status"]')].map((e) => e.textContent),
+          requests: document.querySelectorAll('[data-testid="incoming-request"]').length,
+          notice: document.getElementById("notice")?.hidden ? "" : (document.getElementById("notice")?.textContent ?? ""),
+          pcStates: pcs.filter((pc) => pc.signalingState !== "closed").map((pc) => `${pc.connectionState}/${pc.iceConnectionState}`),
+        };
+      })
+      .catch((e: unknown) => ({ error: String(e) }));
+    lines.push(`#${i}: ${JSON.stringify(d)}`);
+  }
+  return lines.join("\n");
+}
