@@ -18,7 +18,7 @@ Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · C
 | PA-012 | Security hardening and protocol validation | PA-006 | TODO | Group protocol validation, fuzzing |
 | PA-013 | Browser lifecycle and privacy verification | PA-011 | TODO | Edge/Chrome on Windows, BFCache, kill scenarios |
 | PA-014 | Performance and real-world network testing | PA-006 | TODO | CPU/RAM in game, 6-person mesh, CGNAT matrix |
-| PA-015 | GitHub Pages **test** deployment (brought forward, D-015) | PA-001 | IN_PROGRESS | 0.0.1 live since 2026-11-25; 0.0.2 review fixes awaiting commit/push approval |
+| PA-015 | GitHub Pages **test** deployment (brought forward, D-015) | PA-001 | REVIEW | 0.0.2 live and verified 2026-11-25; awaiting manual test results |
 | PA-016 | Release candidate verification | all | TODO | |
 
 \* The spike implemented the core of these tasks for 1:1 calls. The reordering (PA-015 before PA-006) was approved (D-015).

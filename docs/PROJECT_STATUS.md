@@ -2,12 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.0.2 (working tree; **not committed**). Live site still serves 0.0.1. |
-| Current branch | `main` — local has uncommitted 0.0.2 review changes; `origin/main` = `d160d4d` (0.0.1) |
+| Current version | 0.0.2 (deployed as test build) |
+| Current branch | `main` = `origin/main` (0.0.2 review commit `a528d23` + this status update) |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
 | Test deployment | https://bisbiliroglu.github.io/psstamigo/ (GitHub Pages, Actions source, HTTPS enforced) |
 | Current task | PA-015 — PA-001 review & GitHub Pages **test** deployment (brought forward, D-015) |
-| Task status | Phases A–D done; **waiting at Phase E approval gate** (commit + push of 0.0.2) |
+| Task status | Phase E done (0.0.2 deployed and verified live); Phase F: manual tests by the user pending |
 | Last update | 2026-11-25 |
 
 ## Completed tasks
@@ -16,7 +16,7 @@
 
 ## In progress
 
-- PA-015 — IN_PROGRESS (test deployment; 0.0.1 live, 0.0.2 ready)
+- PA-015 — REVIEW (0.0.2 test deployment live; awaiting manual test results)
 - PA-001 — REVIEW
 
 ## Pending
@@ -42,7 +42,10 @@ PA-006, PA-009 … PA-014, PA-016: TODO.
 - Browser integration, production build with CSP (`vite preview`): **8 / 8 passed**
 - CSP negative check on production build: inline script blocked, fetch to another origin blocked
   (eval blocking cannot be observed via DevTools-evaluated code; policy contains no `unsafe-eval`)
-- Live site (0.0.1) smoke test from PA-001: pass. **0.0.2 not deployed yet.**
+- GitHub Actions on `a528d23`: deploy workflow (build + privacy checks + deploy) **success**; browser-test workflow **8 / 8 passed**
+- Live site 0.0.2 smoke test (two Chromium contexts → https://bisbiliroglu.github.io/psstamigo/): **pass** — header `v0.0.2`,
+  signaling online, request/accept, voice path connected, chat delivered, mic on/off, leave. Live bundle hash equals local build
+  (`index-Cu-cQLDa.js`); `noindex` and CSP served.
 - Manual / real network: **not run**
 
 ## Manual test results
@@ -80,9 +83,9 @@ Checklist: [MANUAL_TESTS.md](MANUAL_TESTS.md). All scenarios: **NOT RUN**.
 - 2026-11-25: Public GitHub repo created by the user; leak prevention requested (noreply identity, no personal data).
 - 2026-11-25: Approved initial commit, push and GitHub Pages enablement (0.0.1 deployed).
 - 2026-11-25: Approved roadmap reordering; PA-015 brought forward as test deployment only (D-015).
+- 2026-11-25: Approved commit + push of 0.0.2 review fixes (deployed).
 
 ## Next recommended task
 
-1. User approval of Phase E: commit + push 0.0.2 (auto-deploys), then live smoke test.
-2. User runs [MANUAL_TESTS.md](MANUAL_TESTS.md) with friends; results recorded here.
-3. Then **PA-006 — P2P mesh group sessions (max 6)**.
+1. User runs [MANUAL_TESTS.md](MANUAL_TESTS.md) with friends; results recorded here.
+2. Then **PA-006 — P2P mesh group sessions (max 6)**.
