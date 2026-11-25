@@ -5,7 +5,11 @@
 
 import type { OfferVerdict } from "./sdpPolicy";
 
-export type SignalingState = "connecting" | "online" | "offline" | "failed";
+/**
+ * connecting: first registration · online · reconnecting: bounded loop running (P2P calls unaffected) ·
+ * unavailable: loop exhausted or UID lost (manual retry) · failed: first registration failed · offline: destroyed
+ */
+export type SignalingState = "connecting" | "online" | "reconnecting" | "unavailable" | "failed" | "offline";
 
 export interface DataLink {
   readonly peerId: string;
@@ -51,6 +55,14 @@ export interface Signaling {
   readonly uid: string | null;
   readonly state: SignalingState;
   start(): void;
+  /** Current reconnect attempt number (0 when not reconnecting). */
+  readonly reconnectAttempt: number;
+  /** True if the server gave our UID to someone else while we were away (REC-003). */
+  readonly uidLost: boolean;
+  /** User-initiated retry: resets the bounded loop and tries now. No-op when online. */
+  retryNow(): void;
+  /** Gets a NEW temporary UID (only allowed when no session uses the old one; caller checks). */
+  renewIdentity(): void;
   connect(peerId: string): DataLink;
   call(peerId: string, stream: MediaStream): MediaLink;
   on<K extends keyof SignalingEvents>(event: K, cb: (payload: SignalingEvents[K]) => void): () => void;

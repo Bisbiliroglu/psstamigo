@@ -69,7 +69,10 @@ The page has `<meta name="robots" content="noindex, nofollow">` and a production
   from joining. With many people CPU/upload use grows (10 people = 9 outgoing voice streams); not yet measured.
 - Group membership is not atomic: after a crash mid-join, participants may see different lists until someone leaves
   (each still sends audio only to people it approved itself).
-- A participant whose browser crashes or loses the network is removed by the others after about 30–40 seconds.
+- A participant whose browser crashes or loses the network is removed by the others after about 30–40 seconds and must send a
+  new join request (everyone approves again). Short interruptions recover by themselves; a broken voice path is rebuilt
+  automatically; signaling outages do not end calls. Recovery does **not** fix NAT/firewall problems (no TURN) and is not
+  guaranteed under every network condition; background tabs may recover more slowly.
 - An invite link is not a secret: it contains your temporary UID and can stay in browser history or wherever it was shared.
 - Chrome and Edge on Windows are the primary targets. Other browsers are untested.
 

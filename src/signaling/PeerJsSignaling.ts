@@ -2,8 +2,8 @@
  * The only module that imports PeerJS. Wraps Peer / DataConnection / MediaConnection
  * behind the transport interfaces in ./types.
  */
-import { Peer, type DataConnection, type MediaConnection, type PeerError } from "peerjs";
-import { ICE_SERVERS, LIMITS, TIMEOUTS } from "../core/config";
+import { Peer, type DataConnection, type MediaConnection, type PeerError, type PeerOptions } from "peerjs";
+import { ICE_SERVERS, LIMITS, SIGNALING_RECONNECT, TIMEOUTS } from "../core/config";
 import { Emitter } from "../core/emitter";
 import { generateUid } from "../core/uid";
 import { auditOffer, type OfferVerdict } from "./sdpPolicy";
@@ -109,8 +109,14 @@ class PeerJsMediaLink implements MediaLink {
   }
 }
 
+/** Minimal Peer surface used here (lets tests inject a fake Peer). */
+export type PeerLike = Pick<Peer, "on" | "destroy" | "reconnect" | "disconnect" | "connect" | "call" | "disconnected" | "destroyed">;
+export type PeerFactory = (id: string, options: PeerOptions) => PeerLike;
+
+const defaultFactory: PeerFactory = (id, options) => new Peer(id, options);
+
 export class PeerJsSignaling implements Signaling {
-  private peer: Peer | null = null;
+  private peer: PeerLike | null = null;
   private readonly events = new Emitter<SignalingEvents>();
   private currentState: SignalingState = "offline";
   private currentUid: string | null = null;
@@ -119,6 +125,17 @@ export class PeerJsSignaling implements Signaling {
   private destroyed = false;
   /** True once the UID was registered; afterwards signaling errors never destroy P2P links. */
   private registered = false;
+  /** Bounded reconnect loop (REC-002): at most one timer, generation-checked. */
+  private attempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private attemptTimer: ReturnType<typeof setTimeout> | null = null;
+  private loopGeneration = 0;
+  private lostUid = false;
+
+  constructor(
+    private readonly createPeerInstance: PeerFactory = defaultFactory,
+    private readonly random: () => number = Math.random,
+  ) {}
 
   get uid(): string | null {
     return this.currentUid;
@@ -126,6 +143,14 @@ export class PeerJsSignaling implements Signaling {
 
   get state(): SignalingState {
     return this.currentState;
+  }
+
+  get reconnectAttempt(): number {
+    return this.currentState === "reconnecting" ? this.attempt : 0;
+  }
+
+  get uidLost(): boolean {
+    return this.lostUid;
   }
 
   on<K extends keyof SignalingEvents>(event: K, cb: (payload: SignalingEvents[K]) => void): () => void {
@@ -138,8 +163,8 @@ export class PeerJsSignaling implements Signaling {
     this.createPeer();
   }
 
-  private setState(state: SignalingState): void {
-    if (this.currentState === state) return;
+  private setState(state: SignalingState, force = false): void {
+    if (this.currentState === state && !force) return;
     this.currentState = state;
     this.events.emit("state", state);
   }
@@ -151,7 +176,7 @@ export class PeerJsSignaling implements Signaling {
     this.setState("connecting");
 
     // Explicit config replaces PeerJS defaults, removing its undocumented TURN server (D-003).
-    const peer = new Peer(uid, { config: { iceServers: ICE_SERVERS }, debug: 0 });
+    const peer = this.createPeerInstance(uid, { config: { iceServers: ICE_SERVERS }, debug: 0 });
     this.peer = peer;
 
     this.clearOpenTimer();
@@ -163,8 +188,10 @@ export class PeerJsSignaling implements Signaling {
     peer.on("open", (id) => {
       if (this.peer !== peer) return;
       this.clearOpenTimer();
+      this.stopLoop();
       this.currentUid = id;
       this.registered = true;
+      this.lostUid = false;
       this.setState("online");
       this.events.emit("open", id);
     });
@@ -186,25 +213,17 @@ export class PeerJsSignaling implements Signaling {
     });
 
     peer.on("disconnected", () => {
-      if (this.peer !== peer || this.destroyed) return;
-      // Signaling lost; existing P2P links may still work. One bounded reconnect attempt.
-      this.setState("offline");
-      setTimeout(() => {
-        if (this.peer === peer && !peer.destroyed && peer.disconnected) {
-          try {
-            peer.reconnect();
-          } catch {
-            /* reported via error event */
-          }
-        }
-      }, 2_000);
+      if (this.peer !== peer || this.destroyed || !this.registered) return;
+      // Signaling lost; existing P2P links keep working (REC-001). Bounded reconnect loop.
+      this.clearAttemptTimer();
+      if (!this.lostUid) this.scheduleReconnect(peer);
     });
 
     peer.on("error", (err: PeerError<string>) => {
       if (this.peer !== peer) return;
       const code = String(err.type);
       if (code === "unavailable-id" && !this.registered) {
-        // UID collision: regenerate safely, bounded retries.
+        // UID collision at first registration: regenerate safely, bounded retries.
         peer.destroy();
         this.peer = null;
         if (this.attempts < LIMITS.uidRetries) {
@@ -214,12 +233,21 @@ export class PeerJsSignaling implements Signaling {
         }
         return;
       }
+      if (code === "unavailable-id") {
+        // REC-003: our UID was taken while we were away. Never switch UID silently: a new Peer would
+        // close every P2P link. Stop retrying; the user decides (only possible outside a session).
+        this.lostUid = true;
+        this.stopLoop();
+        this.setState("unavailable", true);
+        this.events.emit("error", { code: "uid-lost", message: "Geçici UID'n başka biri tarafından alındı.", fatal: false, peerId: null });
+        return;
+      }
       const fatal = ["browser-incompatible", "invalid-id", "invalid-key", "ssl-unavailable", "server-error", "socket-error", "socket-closed"].includes(code);
       if (fatal && !this.registered) {
         this.fail(code, describePeerError(code));
         return;
       }
-      if (fatal) this.setState("offline");
+      // After registration, server problems only affect signaling; the reconnect loop handles them.
       this.events.emit("error", {
         code,
         message: describePeerError(code),
@@ -229,8 +257,95 @@ export class PeerJsSignaling implements Signaling {
     });
   }
 
+  private scheduleReconnect(peer: PeerLike): void {
+    if (this.reconnectTimer !== null || this.destroyed) return; // never two loops
+    const delays = SIGNALING_RECONNECT.delaysMs;
+    if (this.attempt >= delays.length) {
+      this.setState("unavailable", true);
+      return;
+    }
+    const base = delays[this.attempt] ?? delays[delays.length - 1] ?? 30_000;
+    const jitter = 1 + (this.random() * 2 - 1) * SIGNALING_RECONNECT.jitter;
+    const gen = this.loopGeneration;
+    this.setState("reconnecting", true);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (gen !== this.loopGeneration) return;
+      this.attemptReconnect(peer);
+    }, Math.round(base * jitter));
+  }
+
+  private attemptReconnect(peer: PeerLike): void {
+    if (this.peer !== peer || this.destroyed || peer.destroyed || !peer.disconnected) return;
+    this.attempt += 1;
+    this.setState("reconnecting", true);
+    try {
+      peer.reconnect(); // same UID and token (REC-003)
+    } catch {
+      this.scheduleReconnect(peer);
+      return;
+    }
+    const gen = this.loopGeneration;
+    this.clearAttemptTimer();
+    this.attemptTimer = setTimeout(() => {
+      this.attemptTimer = null;
+      if (gen !== this.loopGeneration || this.peer !== peer || this.currentState === "online") return;
+      try {
+        peer.disconnect(); // abandon a hanging attempt; emits "disconnected" ⇒ next attempt
+      } catch {
+        /* ignore */
+      }
+      this.scheduleReconnect(peer);
+    }, SIGNALING_RECONNECT.attemptTimeoutMs);
+  }
+
+  retryNow(): void {
+    if (this.destroyed || this.currentState === "online" || this.currentState === "connecting") return;
+    const peer = this.peer;
+    if (!this.registered || !peer) {
+      // First registration failed: start over (new temporary UID; nothing depends on it yet).
+      this.peer = null;
+      this.start();
+      return;
+    }
+    if (this.lostUid) return; // needs renewIdentity(), decided by the user
+    this.stopLoop();
+    this.attempt = 0;
+    if (!peer.disconnected) return;
+    this.attemptReconnect(peer);
+  }
+
+  renewIdentity(): void {
+    if (this.destroyed) return;
+    this.stopLoop();
+    try {
+      this.peer?.destroy();
+    } catch {
+      /* ignore */
+    }
+    this.peer = null;
+    this.registered = false;
+    this.lostUid = false;
+    this.attempts = 0;
+    this.createPeer();
+  }
+
+  private stopLoop(): void {
+    this.loopGeneration++;
+    this.attempt = 0;
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.clearAttemptTimer();
+  }
+
+  private clearAttemptTimer(): void {
+    if (this.attemptTimer !== null) clearTimeout(this.attemptTimer);
+    this.attemptTimer = null;
+  }
+
   private fail(code: string, message: string): void {
     this.clearOpenTimer();
+    this.stopLoop();
     this.peer?.destroy();
     this.peer = null;
     this.currentUid = null;
@@ -250,7 +365,7 @@ export class PeerJsSignaling implements Signaling {
   }
 
   call(peerId: string, stream: MediaStream): MediaLink {
-    if (!this.peer) throw new Error("signaling-offline");
+    if (!this.peer || this.currentState !== "online") throw new Error("signaling-offline");
     const call = this.peer.call(peerId, stream);
     if (!call) throw new Error("call-failed");
     return new PeerJsMediaLink(call, false);
@@ -260,6 +375,7 @@ export class PeerJsSignaling implements Signaling {
     if (this.destroyed) return;
     this.destroyed = true;
     this.clearOpenTimer();
+    this.stopLoop();
     try {
       this.peer?.destroy();
     } catch {

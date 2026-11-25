@@ -43,7 +43,9 @@ body {
 .signal { margin: 0 0 0 auto; font-size: 13px; color: var(--muted); }
 .signal::before { content: "●"; margin-right: 6px; font-size: 10px; vertical-align: 1px; }
 .signal[data-state="online"] { color: var(--accent); }
-.signal[data-state="failed"], .signal[data-state="offline"] { color: var(--danger); }
+.signal[data-state="failed"], .signal[data-state="offline"], .signal[data-state="unavailable"] { color: var(--danger); }
+.signal[data-state="reconnecting"] { color: var(--warn); }
+button.small { padding: 3px 8px; font-size: 12px; }
 
 /* ---------- layout: narrow sidebar + main session ---------- */
 .layout {
@@ -204,7 +206,7 @@ details.help p { margin: 6px 0 0; }
 .participant .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .participant .media { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .participant .media[data-status="failed"] { color: var(--danger); }
-.participant .media[data-status="interrupted"] { color: var(--warn); }
+.participant .media[data-status="interrupted"], .participant .media[data-status="recovering"] { color: var(--warn); }
 
 .chat { border-top: 1px solid var(--border); padding-top: 10px; }
 .chat-log {

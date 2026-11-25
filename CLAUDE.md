@@ -26,6 +26,8 @@ Motto: *Connect. Talk. Play.*  Task IDs: `PA-001`, `PA-002`, …
 - **PRIV-010** No analytics, telemetry, tracking cookies, fingerprinting, ads, crash reporting, external fonts/CDNs. Dependencies are bundled.
 - **GROUP (D-016)** A newcomer needs every member's own approval; audio/playback/history only after commit; each member enforces its own approval.
 - **ORDERING (D-023)** Never act on a not-yet-committed peer's messages; buffer (bounded) until own commit, drop on rollback.
+- **RECOVERY (D-028…D-030)** Signaling loss never touches calls; media replacement only for committed members via their own data link
+  (generation-checked, audio-only, no new capture, current mic/speaker state); convergence only removes, never adds.
 - **PRIV-011** A UID grants nothing. Media only after explicit acceptance. All protocol messages are untrusted: schema-validated, size-limited, rate-limited. Render remote text with `textContent` only.
 - **PRIV-012** Never overstate security. WebRTC transport encryption ≠ authenticated end-to-end identity.
 
@@ -42,6 +44,7 @@ Motto: *Connect. Talk. Play.*  Task IDs: `PA-001`, `PA-002`, …
 ## Explicitly out of scope
 
 Camera, video, screen sharing, system audio, recording, accounts, persistent identity, persistent chat, file sharing, public user directory, analytics, ads, backend, database.
+Current priority (D-032): PA-009 audio devices → PA-010 UI/UX → real-world tests → remaining stability/release tasks.
 Group size: `MAX_PARTICIPANTS` = 10 (D-019); low-bandwidth mode above 5 (D-020); invite links in the URL fragment only (D-021).
 Deferred (only on explicit request): shared access key, global hotkeys, push-to-talk, friend list, desktop packaging, PWA. Do not build placeholders for these.
 

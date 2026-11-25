@@ -24,6 +24,28 @@ export const LOW_BANDWIDTH_BITRATE_BPS = 16_000;
  */
 export const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
+/**
+ * Signaling (PeerJS Cloud) reconnect policy (REC-002, D-028): one loop, bounded, backoff with ±25 % jitter.
+ * About 2 minutes in total; then the user can retry by hand. Existing P2P calls are never touched.
+ */
+export const SIGNALING_RECONNECT = {
+  delaysMs: [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000],
+  jitter: 0.25,
+  /** An attempt that neither opens nor fails in this time is abandoned and the next one is scheduled. */
+  attemptTimeoutMs: 10_000,
+} as const;
+
+/**
+ * Media-only recovery for committed members whose data link is healthy (REC-007, D-029).
+ * Bounded attempts; each attempt is a brand-new MediaConnection (PeerJS 1.5.5 cannot ICE-restart).
+ */
+export const MEDIA_RECOVERY = {
+  delaysMs: [2_000, 5_000, 10_000],
+  attemptTimeoutMs: 15_000,
+  /** Media stuck in ICE "disconnected" this long while the data link is connected counts as failed. */
+  stallMs: 20_000,
+} as const;
+
 export const TIMEOUTS = {
   /** Waiting for the signaling server to register our UID. */
   signalingOpenMs: 15_000,
@@ -45,6 +67,11 @@ export const TIMEOUTS = {
    * gone (crashed tab / lost network). PeerJS only closes on "failed", which Chrome may never reach.
    */
   peerLostMs: 30_000,
+  /**
+   * A membership discrepancy reported by member-sync is acted on only if it still holds after this
+   * grace period (normal leaves and vanish timers on different peers settle within it) — D-030.
+   */
+  memberSyncGraceMs: 10_000,
 } as const;
 
 export const LIMITS = {

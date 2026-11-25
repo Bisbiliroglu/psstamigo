@@ -163,6 +163,11 @@ function makePc(stream: MediaStream): FakePeerConnection {
 }
 
 export class FakeSignaling implements Signaling {
+  reconnectAttempt = 0;
+  uidLost = false;
+  retryNow(): void {}
+  renewIdentity(): void {}
+
   uid: string | null;
   state: SignalingState = "online";
   readonly events = new Emitter<SignalingEvents>();

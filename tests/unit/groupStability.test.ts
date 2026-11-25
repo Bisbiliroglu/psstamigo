@@ -243,7 +243,7 @@ describe("vanished peers (no close event) — PA-006B HIGH finding", () => {
   it("a short interruption that recovers does not remove anyone", () => {
     const [a, b] = nodes(2) as [NetNode, NetNode];
     formGroup(net, [a, b]);
-    const link = net.openLinksBetween(a.uid, b.uid)[0]!.other; // A's side
+    const link = net.openLinksBetween(a.uid, b.uid)[0]!; // A's side
     link.pc.setIce("disconnected");
     vi.advanceTimersByTime(TIMEOUTS.peerLostMs - 5_000);
     link.pc.setIce("connected");

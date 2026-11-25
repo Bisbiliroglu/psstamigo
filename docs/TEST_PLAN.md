@@ -12,6 +12,8 @@ Automated and manual results are reported separately. Manual / real-network test
 | `tests/unit/fakeNetwork.ts` | in-memory mesh: real SessionController + MicrophoneController + SpeakerController per node |
 | `tests/unit/group.test.ts` | 3-person admission via non-initiator, 10 + 1 capacity, all-member approval, single rejection, vote timeout, duplicate/forged approval, own-approval enforcement, stale snapshot, replay/foreign sid, simultaneous joins, duplicate links, video/unreadable/invalid offers, partial failure rollback, candidate disconnect, initiator/coordinator/member departure, killed tab, last-member cleanup, commit-gated mic/speaker, mic/speaker change during admission, mic off for all peers, pending getUserMedia races, stale callbacks, group chat fan-out/dedup/impersonation/no history, chat with failed media, idempotent cleanup, low-bandwidth mode |
 | `tests/unit/invite.test.ts` | invite URL in fragment, validation |
+| `tests/unit/signaling.test.ts` | REC-001…004 with a fake Peer: same-UID reconnect, single bounded loop, hanging attempt, jitter, manual retry, cancellation, UID lost, first-registration failure |
+| `tests/unit/recovery.test.ts` | REC-005…014: media replacement, current mic/speaker state, exhaustion, stall, short interruption, unauthorized/stale/wrong-role requests, low-bandwidth after recovery, 10 people, departure during recovery, repeated cycles, partial commit convergence, leave race, partition, removed participant, coordinator crash during commit |
 | `tests/unit/groupStability.test.ts` | PA-006B: commit overtaken by newcomer messages (held delivery), deferred proposal, early messages dropped on rollback + late commit ignored, v1/missing/malformed/future protocol versions, 15 join/leave cycles leave no links/timers/senders/players, bandwidth failure reported, no redundant setParameters, vanished member removal after 30 s / recovery within grace / last member to idle |
 | `tests/unit/session.test.ts` (rewritten for v2) | authorization (no media before accept, stranger/duplicate/video calls closed), handshake & request timeouts, busy, outgoing flow, reject, unavailable UID, chat rate limit, leave & dispose |
 | `tests/unit/policy.test.ts` | static privacy checks on app sources (incl. no track `clone()`, no TURN), PeerJS import boundary, STUN-only config, noindex |
@@ -36,6 +38,9 @@ An init script observes `getUserMedia`, `RTCPeerConnection` and media playback w
 | group: four people | one member rejects, retry, initiator leaves |
 | group: ten people | full mesh 10/10, low-bandwidth mode (all senders 16 kbps), 11th rejected as full, back to normal at 5 |
 | invite link | banner, fragment removed, nothing sent before click, normal approval |
+| recovery: signaling outage (`recovery.spec.ts`) | PeerJS socket closed: call keeps flowing (inbound RTP grows), status says signaling is down, reconnects with the same UID, mic state and single capture unchanged |
+| recovery: media failure | media RTCPeerConnections closed (simulated): replacement call, "ses yeniden bağlandı", 3 cycles without extra connections or captures, mute during outage stays muted |
+| recovery: one participant | one member loses all media; the others are untouched; it recovers both paths |
 | vanished peer | abrupt context close (no `leave`): both remaining members drop it (measured about 36 s), mic state kept |
 
 Group tests attach a privacy-safe state dump on failure (status text, participant media states, admission status, peer connection
@@ -48,6 +53,9 @@ Run against the dev server (`npm run test:e2e`) or the production build with CSP
 CI runs the dev-server variant in `browser-tests.yml` (separate from the deploy gate, no retries).
 
 Limits: Chromium only (not Edge/Windows), loopback network (host candidates), fake device, synthetic background events.
+
+Note: Playwright `setOffline()` does not cut WebRTC UDP, so real network interruptions cannot be produced here; recovery browser tests
+use simulated transport failures and are reported separately from real network tests.
 
 ## 3. Manual tests (user)
 

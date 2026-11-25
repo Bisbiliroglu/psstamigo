@@ -21,8 +21,10 @@ function installProbe(opts: ProbeOptions): void {
     negotiated: RTCPeerConnection[];
     players: HTMLMediaElement[];
     cspViolations: string[];
+    sockets: WebSocket[];
   };
   const probe: Probe = {
+    sockets: [],
     gum: 0,
     gdm: 0,
     constraints: [],
@@ -54,6 +56,13 @@ function installProbe(opts: ProbeOptions): void {
       return Promise.reject(new DOMException("blocked by test", "NotAllowedError"));
     };
   }
+  const OriginalWS = window.WebSocket;
+  window.WebSocket = class extends OriginalWS {
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(url, protocols);
+      probe.sockets.push(this);
+    }
+  } as typeof WebSocket;
   const OriginalPC = window.RTCPeerConnection;
   window.RTCPeerConnection = class extends OriginalPC {
     constructor(config?: RTCConfiguration) {
@@ -298,4 +307,42 @@ export async function diagnosticsDump(pages: Page[]): Promise<string> {
     lines.push(`#${i}: ${JSON.stringify(d)}`);
   }
   return lines.join("\n");
+}
+
+
+/** Simulated signaling outage: closes the PeerJS Cloud WebSocket(s); WebRTC connections stay up. */
+export async function closeSignalingSocket(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const p = (window as unknown as { __probe: { sockets: WebSocket[] } }).__probe;
+    const open = p.sockets.filter((s) => s.readyState === WebSocket.OPEN && s.url.includes("peerjs"));
+    for (const s of open) s.close();
+    return open.length;
+  });
+}
+
+/**
+ * Simulated media transport failure: closes every open media RTCPeerConnection of the page (those with
+ * an audio sender) and fires the state-change event the browser would fire on a real failure.
+ * Data connections are untouched. This is NOT a real network interruption.
+ */
+export async function breakMediaConnections(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const p = (window as unknown as { __probe: { pcs: RTCPeerConnection[] } }).__probe;
+    const media = p.pcs.filter((pc) => pc.signalingState !== "closed" && pc.getTransceivers().some((t) => t.receiver.track.kind === "audio"));
+    for (const pc of media) {
+      pc.close();
+      pc.dispatchEvent(new Event("iceconnectionstatechange"));
+    }
+    return media.length;
+  });
+}
+
+/** Number of open RTCPeerConnections that carry audio (media) vs. not (data). */
+export async function openPcKinds(page: Page): Promise<{ media: number; data: number }> {
+  return page.evaluate(() => {
+    const p = (window as unknown as { __probe: { pcs: RTCPeerConnection[] } }).__probe;
+    const open = p.pcs.filter((pc) => pc.signalingState !== "closed");
+    const media = open.filter((pc) => pc.getTransceivers().some((t) => t.receiver.track.kind === "audio")).length;
+    return { media, data: open.length - media };
+  });
 }

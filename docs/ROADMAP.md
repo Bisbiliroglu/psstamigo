@@ -2,6 +2,13 @@
 
 Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · CANCELLED
 
+## Current priority (D-032, user decision 2026-11-25)
+
+1. **PA-009** — audio device management and audio settings (next)
+2. **PA-010** — UI/UX improvements
+3. Real-world usage feedback and performance tests (user + friends, in parallel)
+4. Remaining recovery, stability and release verification (PA-012 … PA-016)
+
 | ID | Description | Depends on | Status | Notes |
 |---|---|---|---|---|
 | PA-001 | Project initialization and technical feasibility spike | — | REVIEW | Reviewed in PA-015 review (fixes in 0.0.2); manual real-network tests pending |
@@ -15,7 +22,8 @@ Status values: TODO · IN_PROGRESS · BLOCKED · REVIEW · DONE · DEFERRED · C
 | PA-008 | Audio activity indicators | PA-005 | REVIEW* | Real-signal meters done; threshold tuning with real voices |
 | PA-009 | Audio settings and individual volume controls | PA-005 | TODO | Device selection (`setSinkId`), per-participant volume |
 | PA-010 | Main UI implementation and usability | PA-006 | TODO | Compact layout done early on user request (D-022); remaining: usability review |
-| PA-011 | Reconnection and error recovery | PA-006B | TODO | ICE restart, rejoin after vanish, membership convergence after partial commit (D-017), signaling loss, safe defaults |
+| PA-006C | Peer link lifecycle extraction (behavior-preserving refactor) | PA-006B | DONE (code) | D-027; verified with unchanged test suites |
+| PA-011 | Reconnection and error recovery | PA-006C | REVIEW | 0.2.0: signaling reconnect (D-028), media recovery (D-029), shrink-only convergence + rejoin (D-030); real network tests pending |
 | PA-012 | Security hardening and protocol validation | PA-006 | TODO | Group protocol validation, fuzzing |
 | PA-013 | Browser lifecycle and privacy verification | PA-011 | TODO | Edge/Chrome on Windows, BFCache, kill scenarios |
 | PA-014 | Performance and real-world network testing | PA-006 | TODO | CPU/RAM in game, 10-person mesh (D-019), low-bandwidth quality (D-020), CGNAT matrix |

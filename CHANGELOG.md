@@ -4,6 +4,17 @@ All notable user-facing changes. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### 0.2.0 — PA-011 connection recovery (test build)
+
+- Signaling (PeerJS Cloud) drops no longer affect running calls; the app reconnects with the same UID (up to ~2 minutes,
+  then "Yeniden dene"). New joins are paused meanwhile and the status says so.
+- A broken voice connection to one person is rebuilt automatically (up to 3 tries) while chat keeps working;
+  your mic/speaker stay exactly as you left them.
+- Participants whose join was not completed by everyone are removed consistently; they get a "rejoin" button
+  (a new request still needs everyone's approval).
+- Participant list shows connection interruptions; warning when your mic is on but your voice reaches nobody.
+- Internal: peer link lifecycle moved to its own module (no behavior change).
+
 ### 0.1.1 — PA-006B group stability fixes (local, not deployed)
 
 - Fix: chat or a new join request from a just-joined person could be lost when it arrived before the join confirmation

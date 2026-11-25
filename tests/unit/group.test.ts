@@ -538,7 +538,8 @@ describe("group chat (GR-007, FR-015)", () => {
     formGroup(net, [a, b, c]);
     net.openMediaBetween(a.uid, c.uid)[0]!.pc!.setIce("failed");
     net.settle();
-    expect(a.session.snapshot().participants.find((p) => p.peerId === c.uid)?.media).toBe("failed");
+    // PA-011: media failure with a healthy data link → recovery is attempted; chat is unaffected meanwhile.
+    expect(a.session.snapshot().participants.find((p) => p.peerId === c.uid)?.media).toBe("recovering");
     c.session.sendChat("sesim yok ama yazabiliyorum");
     net.settle();
     expect(a.session.snapshot().chat.some((e) => e.text === "sesim yok ama yazabiliyorum")).toBe(true);

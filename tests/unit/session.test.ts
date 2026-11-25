@@ -225,7 +225,8 @@ describe("1:1 media lifecycle", () => {
     expect(a.session.snapshot().participants[0]?.media).toBe("connected");
     pc.setIce("failed");
     net.settle();
-    expect(a.session.snapshot().participants[0]?.media).toBe("failed");
+    // PA-011: a media failure with a healthy data link starts bounded recovery (not a departure).
+    expect(a.session.snapshot().participants[0]?.media).toBe("recovering");
     expect(a.session.snapshot().phase).toBe("active"); // media failure is not a departure
     expect(a.session.sendChat("hala burada")).toBe(true);
     net.settle();

@@ -73,6 +73,7 @@ export class NetDataLink implements DataLink {
   open(): void {
     if (this.closed) return;
     this.isOpen = true;
+    this.pc.iceConnectionState = "connected"; // transport up (no event: nobody listens before open)
     for (const cb of this.openCbs) cb();
   }
   receive(data: unknown): void {
@@ -135,6 +136,11 @@ function makePc(stream: MediaStream): FakePeerConnection {
 
 class NetSignaling implements Signaling {
   state: SignalingState = "online";
+  reconnectAttempt = 0;
+  uidLost = false;
+  retryNow(): void {}
+  renewIdentity(): void {}
+
   readonly events = new Emitter<SignalingEvents>();
   constructor(
     private readonly net: FakeNetwork,
@@ -371,15 +377,36 @@ export class FakeNetwork {
     });
   }
 
+  /** Media transport of the pair a–b fails on both sides (data link untouched). */
+  failMediaPair(a: string, b: string): void {
+    for (const m of this.mediaLinks) {
+      if (m.closed) continue;
+      if ((m.peerId === b && m.other.peerId === a) || (m.peerId === a && m.other.peerId === b)) m.pc?.setIce("failed");
+    }
+  }
+
+  /** Both transports (data + media) of the pair a–b go ICE-disconnected on both sides (no close events). */
+  disconnectPair(a: string, b: string): void {
+    const match = (x: { peerId: string; other: { peerId: string } }): boolean =>
+      (x.peerId === b && x.other.peerId === a) || (x.peerId === a && x.other.peerId === b);
+    for (const l of this.dataLinks) if (!l.closed && match(l)) l.pc.setIce("disconnected");
+    for (const m of this.mediaLinks) if (!m.closed && match(m)) m.pc?.setIce("disconnected");
+  }
+
+  unblock(a: string, b: string): void {
+    this.blockedMedia.delete([a, b].sort().join("|"));
+  }
+
   block(a: string, b: string): void {
     this.blockedMedia.add([a, b].sort().join("|"));
   }
 
-  /** Open application data links between two nodes (excluding closed). */
+  /** Open application data links between two nodes, returned as `a`'s side (peerId = b). */
   openLinksBetween(a: string, b: string): NetDataLink[] {
     return this.dataLinks.filter((l) => !l.closed && l.peerId === b && l.other.peerId === a);
   }
 
+  /** Open media links between two nodes, returned as `a`'s side (peerId = b). */
   openMediaBetween(a: string, b: string): NetMediaLink[] {
     return this.mediaLinks.filter((l) => !l.closed && l.peerId === b && l.other.peerId === a);
   }

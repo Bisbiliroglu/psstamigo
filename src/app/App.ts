@@ -10,7 +10,7 @@ import { AudioGraph } from "../audio/AudioGraph";
 import { ActivityDetector, AnalyserMeter, MeterLoop } from "../audio/levels";
 import { MicrophoneController } from "../audio/MicrophoneController";
 import { SpeakerController, type Player } from "../audio/SpeakerController";
-import { APP_VERSION } from "../core/config";
+import { APP_VERSION, SIGNALING_RECONNECT } from "../core/config";
 import { buildInviteUrl, parseInviteHash } from "../core/invite";
 import { sanitizeDisplayName } from "../session/protocol";
 import { SessionController } from "../session/SessionController";
@@ -77,6 +77,12 @@ export class App {
 
     this.view = new View(APP_VERSION, {
       copyUid: () => void this.copyUid(),
+      retrySignaling: () => this.signaling.retryNow(),
+      rejoin: (target) => this.session.requestJoin(target), // explicit click; full admission again (REC-014)
+      renewUid: () => {
+        // Only outside a session: a new Peer would close every P2P link (REC-003).
+        if (this.session.snapshot().phase === "idle") this.signaling.renewIdentity();
+      },
       copyInvite: () => void this.copyInvite(),
       acceptInvite: () => {
         const uid = this.pendingInvite;
@@ -113,11 +119,9 @@ export class App {
       diagnosticsToggled: (open) => this.setDiagnostics(open),
     });
 
-    this.signaling.on("state", () => this.view.renderSignaling(this.signaling.state, this.signaling.uid));
-    this.signaling.on("open", () => this.view.renderSignaling(this.signaling.state, this.signaling.uid));
-    this.signaling.on("error", (e) => {
-      if (e.fatal) this.view.renderSignaling("failed", null);
-    });
+    this.signaling.on("state", () => this.renderSignaling());
+    this.signaling.on("open", () => this.renderSignaling());
+    this.signaling.on("error", () => this.renderSignaling());
     this.session.onChange((s) => {
       // The requester's AudioContext is created when the call is placed (after accept).
       this.view.renderSession(s);
@@ -134,9 +138,10 @@ export class App {
 
   start(): void {
     window.addEventListener("pagehide", this.onPageHide);
+    window.addEventListener("online", this.onBrowserOnline);
     window.addEventListener("hashchange", this.readInvite);
     window.addEventListener("pageshow", this.onPageShow);
-    this.view.renderSignaling("connecting", null);
+    this.renderSignaling();
     this.view.renderSession(this.session.snapshot());
     this.view.renderMic(this.mic.snapshot());
     this.view.renderSpeaker(this.speaker.snapshot());
@@ -165,6 +170,22 @@ export class App {
     } catch {
       this.view.flashInviteCopied(false);
     }
+  }
+
+  /** Network came back: try signaling now instead of waiting for the next backoff step. */
+  private readonly onBrowserOnline = (): void => {
+    const s = this.signaling.state;
+    if (s === "reconnecting" || s === "unavailable") this.signaling.retryNow();
+  };
+
+  private renderSignaling(): void {
+    this.view.renderSignaling({
+      state: this.signaling.state,
+      uid: this.signaling.uid,
+      attempt: this.signaling.reconnectAttempt,
+      maxAttempts: SIGNALING_RECONNECT.delaysMs.length,
+      uidLost: this.signaling.uidLost,
+    });
   }
 
   private readonly onPageHide = (): void => {
@@ -254,6 +275,7 @@ export class App {
     if (this.shutDown) return;
     this.shutDown = true;
     window.removeEventListener("hashchange", this.readInvite);
+    window.removeEventListener("online", this.onBrowserOnline);
     this.setDiagnostics(false);
     this.session.dispose();
     this.mic.dispose();

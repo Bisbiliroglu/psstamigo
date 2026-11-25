@@ -107,7 +107,7 @@ Each member enforces its **own** approval: it accepts the newcomer's mesh link a
 admission itself, so a coordinator or candidate cannot approve on someone else's behalf. Votes are attributed to the authorized
 link they arrive on. This does not solve D-011 (the coordinator's IP is still exposed to the requester before acceptance).
 
-## D-017 — Admission coordinator, member-set snapshot, single admission (2026-11-25, PA-006)
+## D-017 — Admission coordinator, member-set snapshot, single admission (2026-11-25, PA-006) — non-atomicity limitation partially addressed by D-030
 
 - Coordinator = the member whose UID the candidate entered (deterministic, no election). It only aggregates votes/readiness and
   sends commit/abort; it never relays audio or chat and owns nothing after the admission.
@@ -187,3 +187,44 @@ teardown and the bandwidth cap moved from `SessionController` to `session/peerLi
 host interface for membership decisions. Admission/membership logic intentionally stays in `SessionController` (highest risk to
 move, not needed for recovery). Verified with the unchanged test suites (154 unit, 13 e2e). One intended micro-change: a pending
 bandwidth result can no longer update state after the session ended.
+
+## D-028 — Bounded signaling reconnect, UID kept (2026-11-25, PA-011)
+
+PeerJS keeps P2P connections when its server socket closes and can `reconnect()` with the same ID and token. One generation-checked
+loop: 1, 2, 4, 8, 16, 30, 30, 30 s with ±25 % jitter (about 2 minutes), 10 s per attempt; then "unavailable" with a manual
+"Yeniden dene" button; the browser `online` event triggers an immediate attempt. Calls, mic and speaker are never touched (REC-001).
+If the server gave our UID away, we never switch UID silently (a new Peer would close every P2P link); "Yeni UID al" is offered
+only outside a session. Supersedes the single 2 s reconnect of PA-001.
+
+## D-029 — Media-only recovery with a new MediaConnection; current audio state resumes (2026-11-25, PA-011, user decision)
+
+PeerJS 1.5.5 cannot renegotiate (`negotiationneeded` is unhandled; a second offer for the same connection closes it), so
+`restartIce()` is not usable. When a committed member's media fails (ICE failed, closed, or "disconnected" for 20 s while its data
+link is healthy), the lower UID asks over the authorized data link (`media-recover` → `media-recover-ok`, generation-checked) and
+places a new silent call; the other side answers only that member, only for the agreed generation, only audio-only (D-010).
+3 attempts (2/5/10 s backoff, 15 s each), then "ses kurulamadı; mesajlaşma kullanılabilir". **User decision:** the replacement path
+uses the CURRENT mic/speaker state (same approved member, data link never lost): if the user is unmuted, sending resumes; anything
+the user turned off stays off; no `getUserMedia` is called. A short interruption on the same connection (Scenario B) simply resumes.
+Data-link loss is not repaired: the member is removed (D-024) and must rejoin through unanimous admission.
+
+## D-030 — Shrink-only membership convergence (2026-11-25, PA-011, user decision)
+
+After a membership change each peer sends `member-sync` (its committed set + the candidate it is still connecting). Reports are
+judged after 10 s, only against members committed before the report arrived. If a member does not list someone we have, that pair
+is not fully meshed and the **more recently joined** of the two is removed (locally ordered by commit). Nobody is ever added from
+another peer's list; a higher revision is not trusted. The removed person sees "yeniden katılım isteği gönderebilirsin" with a
+button (explicit click, full unanimous admission). Network partitions end as separate groups that never merge automatically.
+**Accepted risk (user decision):** a malicious member can cause another member's removal by misreporting (denial of service, not a
+privacy breach: removal never grants access). Messages are additive in protocol v2; 0.1.x peers ignore them (no convergence with them).
+
+## D-031 — Version 0.2.0 (2026-11-25, PA-011)
+
+New capability (recovery, convergence, rejoin), additive protocol messages (still v2, compatible with 0.1.x for basic calls).
+Test build, not stable.
+
+## D-032 — Roadmap priority change: audio devices first (2026-11-25, user decision)
+
+The user reports that choosing the right microphone and headset is the most frequent real-world problem. New order:
+1. PA-009 audio device management and settings, 2. PA-010 UI/UX, 3. real-world usage feedback and performance tests (run by the
+user with friends in parallel), 4. remaining recovery, stability and release verification. Open tasks are not closed; real-network,
+security and release acceptance criteria remain in force.

@@ -55,7 +55,10 @@ describe("source policy", () => {
     expect(urls.length).toBeGreaterThan(0);
     expect(urls.every((u) => u.startsWith("stun:"))).toBe(true);
     const signaling = sources.find((s) => s.path === "src/signaling/PeerJsSignaling.ts")?.code ?? "";
-    expect(signaling).toMatch(/new Peer\(uid, \{ config: \{ iceServers: ICE_SERVERS \}/);
+    // Every Peer is created with the explicit STUN-only config (which replaces PeerJS's default TURN).
+    expect(signaling).toMatch(/createPeerInstance\(uid, \{ config: \{ iceServers: ICE_SERVERS \}/);
+    expect(signaling).toMatch(/const defaultFactory: PeerFactory = \(id, options\) => new Peer\(id, options\);/);
+    expect(signaling.match(/new Peer\(/g)).toHaveLength(1);
   });
 
   it("index.html has noindex and no external resources", () => {

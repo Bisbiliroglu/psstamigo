@@ -9,6 +9,9 @@ import type { SignalingState } from "../signaling/types";
 
 export interface ViewActions {
   copyUid(): void;
+  retrySignaling(): void;
+  rejoin(target: string): void;
+  renewUid(): void;
   copyInvite(): void;
   acceptInvite(): void;
   dismissInvite(): void;
@@ -33,9 +36,19 @@ function el<T extends HTMLElement>(id: string): T {
 const SIGNAL_TEXT: Record<SignalingState, string> = {
   connecting: "Sinyal: bağlanıyor…",
   online: "Sinyal: çevrimiçi",
+  reconnecting: "Sinyal: yeniden bağlanıyor…",
+  unavailable: "Sinyal sunucusuna bağlanılamıyor",
   offline: "Sinyal: bağlantı yok",
-  failed: "Sinyal: başarısız",
+  failed: "Sinyal sunucusuna bağlanılamadı",
 };
+
+export interface SignalingView {
+  state: SignalingState;
+  uid: string | null;
+  attempt: number;
+  maxAttempts: number;
+  uidLost: boolean;
+}
 
 const JOIN_STAGE_TEXT = {
   contacting: "İstek gönderiliyor…",
@@ -47,6 +60,7 @@ const MEDIA_TEXT = {
   connecting: "ses kuruluyor…",
   connected: "ses bağlı",
   interrupted: "ses kesintide…",
+  recovering: "ses yeniden kuruluyor…",
   failed: "ses yok",
 } as const;
 
@@ -54,6 +68,12 @@ export class View {
   private readonly signal = el<HTMLParagraphElement>("signal-status");
   private readonly uid = el<HTMLElement>("my-uid");
   private readonly copyBtn = el<HTMLButtonElement>("copy-uid");
+  private readonly signalRetry = el<HTMLButtonElement>("signal-retry");
+  private readonly signalRenew = el<HTMLButtonElement>("signal-renew");
+  private readonly rejoinBtn = el<HTMLButtonElement>("rejoin-btn");
+  private readonly txWarning = el<HTMLParagraphElement>("tx-warning");
+  private micOn = false;
+  private signalingView: SignalingView | null = null;
   private readonly inviteBtn = el<HTMLButtonElement>("copy-invite");
   private readonly inviteBanner = el<HTMLDivElement>("invite-banner");
   private readonly inviteUid = el<HTMLElement>("invite-uid");
@@ -91,6 +111,12 @@ export class View {
   constructor(version: string, private readonly actions: ViewActions) {
     el<HTMLSpanElement>("app-version").textContent = `v${version}`;
     this.listen(this.copyBtn, "click", () => actions.copyUid());
+    this.listen(this.signalRetry, "click", () => actions.retrySignaling());
+    this.listen(this.rejoinBtn, "click", () => {
+      const target = this.session?.rejoinTarget;
+      if (target) actions.rejoin(target);
+    });
+    this.listen(this.signalRenew, "click", () => actions.renewUid());
     this.listen(this.inviteBtn, "click", () => actions.copyInvite());
     this.listen(this.inviteAccept, "click", () => actions.acceptInvite());
     this.listen(el<HTMLButtonElement>("invite-dismiss"), "click", () => actions.dismissInvite());
@@ -119,10 +145,19 @@ export class View {
     this.cleanups.push(() => target.removeEventListener(type, handler as EventListener));
   }
 
-  renderSignaling(state: SignalingState, uid: string | null): void {
+  renderSignaling(v: SignalingView): void {
+    const { state, uid } = v;
+    this.signalingView = v;
     this.signalingState = state;
-    this.signal.textContent = SIGNAL_TEXT[state];
+    this.signal.textContent =
+      state === "reconnecting" && v.attempt > 0
+        ? `Sinyal: yeniden bağlanıyor (${v.attempt}/${v.maxAttempts})…`
+        : state === "unavailable" && v.uidLost
+          ? "Sinyal: geçici UID'n başka biri tarafından alındı"
+          : SIGNAL_TEXT[state];
     this.signal.dataset["state"] = state;
+    this.updateSignalButtons();
+    if (this.session) this.renderSession(this.session); // status text depends on signaling (REC-001)
     this.uid.textContent = uid ?? "—";
     this.copyBtn.disabled = uid === null;
     this.inviteBtn.disabled = uid === null;
@@ -198,6 +233,8 @@ export class View {
         ? JOIN_STAGE_TEXT[s.joinStage ?? "contacting"]
         : active
           ? `Görüşmede ${s.capacity.count}/${s.capacity.max} kişi var.${
+              this.signalingState !== "online" ? " Sinyal yok: mevcut görüşme sürüyor, yeni katılımcı kabul edilemiyor." : ""
+            }${
               s.lowBandwidth
                 ? s.bandwidthLimitFailed
                   ? " Düşük veri modu istendi ama bazı bağlantılarda uygulanamadı."
@@ -227,8 +264,9 @@ export class View {
       }
       const [, nameEl, mediaEl] = entry.row.children as unknown as [HTMLElement, HTMLElement, HTMLElement];
       nameEl.textContent = p.name ? `${p.name} (${p.peerId})` : p.peerId;
-      mediaEl.textContent = MEDIA_TEXT[p.media];
-      mediaEl.dataset["status"] = p.media;
+      // Data link (chat/authorization) interruption is shown before media state: nothing works over it right now.
+      mediaEl.textContent = p.link === "interrupted" ? "bağlantı kesintide…" : MEDIA_TEXT[p.media];
+      mediaEl.dataset["status"] = p.link === "interrupted" ? "interrupted" : p.media;
     }
     for (const [peerId, entry] of this.participantMeters) {
       if (!seen.has(peerId)) {
@@ -237,6 +275,8 @@ export class View {
       }
     }
 
+    this.rejoinBtn.hidden = s.phase !== "idle" || s.rejoinTarget === null;
+    this.updateTxWarning();
     this.micBtn.disabled = !active;
     this.speakerBtn.disabled = !active;
     this.leaveBtn.disabled = !active;
@@ -272,8 +312,17 @@ export class View {
     this.chatLog.scrollTop = this.chatLog.scrollHeight;
   }
 
+  /** Mic on but no connected voice path: never imply that others hear us (REC UI). */
+  private updateTxWarning(): void {
+    const s = this.session;
+    const reachable = s?.participants.some((p) => p.media === "connected" && p.link === "ok") ?? false;
+    this.txWarning.hidden = !(this.micOn && s?.phase === "active" && !reachable);
+  }
+
   renderMic(m: MicSnapshot): void {
     const on = m.state === "on";
+    this.micOn = on;
+    this.updateTxWarning();
     this.micBtn.setAttribute("aria-pressed", String(on));
     this.micBtn.dataset["state"] = m.state;
     this.micLabel.textContent =
@@ -346,7 +395,17 @@ export class View {
     setTimeout(() => (this.copyBtn.textContent = original), 1500);
   }
 
+  private updateSignalButtons(): void {
+    const v = this.signalingView;
+    const idle = (this.session?.phase ?? "idle") === "idle";
+    const stuck = v !== null && (v.state === "unavailable" || v.state === "failed");
+    this.signalRetry.hidden = !stuck || (v?.uidLost ?? false);
+    // A new UID would close every P2P link, so it is only offered outside a session (REC-003).
+    this.signalRenew.hidden = !(v?.uidLost ?? false) || !idle;
+  }
+
   private updateConnectControls(): void {
+    this.updateSignalButtons();
     const phase = this.session?.phase ?? "idle";
     this.connectBtn.disabled = this.signalingState !== "online" || phase !== "idle";
     this.inviteAccept.disabled = this.signalingState !== "online" || phase !== "idle";

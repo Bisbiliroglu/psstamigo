@@ -175,6 +175,30 @@ Yeni birini eklemek için: o kişi görüşmedeki **herhangi birinin** UID'sini 
 | GN-07 | CPU/RAM: 2, 3, 6 ve (mümkünse) 10 kişide | Görev Yöneticisi → tarayıcı |
 | GN-08 | RTT, jitter, paket kaybı | "Teknik bağlantı bilgisi" panelinden, her katılımcı için |
 
+## H. Bağlantı kurtarma (v0.2.0)
+
+Her senaryo için: **Beklenen · Gözlenen · Toparlanma süresi · Bağlantı sonucu · Gizlilik sonucu · Tarayıcı/OS · Ağ türü · PASS / FAIL / NOT RUN**.
+İnterneti kesmek için Wi-Fi'yi kapatıp açabilir veya ağ kablosunu çıkarabilirsiniz. Hepsi şu an **NOT RUN**.
+
+| ID | Senaryo | Beklenen |
+|---|---|---|
+| R-01 | İki kişi konuşurken birinin interneti ~5 sn kesilir | "ses kesintide…", sonra kendiliğinden "ses bağlı"; görüşme bitmez |
+| R-02 | İnternet ~15 sn kesilir | Aynı; gerekirse "ses yeniden kuruluyor…" ve sonra "ses yeniden bağlandı" |
+| R-03 | İnternet uzun süre (1 dk+) kesilir | ~30–40 sn sonra diğerlerinde "bağlantı koptu"; kopan kişide görüşme biter ve "yeniden katılma" butonu çıkar |
+| R-04 | Kopan kişi internete geri döner | Kendiliğinden görüşmeye girmez; butonla yeni istek gönderir, herkes onaylarsa katılır |
+| R-05 | Bir kişinin tarayıcısı aniden kapatılır (Görev Yöneticisi) | Diğerlerinde en geç ~40 sn içinde "bağlantı koptu" |
+| R-06 | Görüşmeyi başlatan kişinin bağlantısı kopar | Diğerleri devam eder |
+| R-07 | 3 kişide biri ayrılırken diğer ikisi konuşur | İkisi kesintisiz devam eder |
+| R-08 | Kesinti sırasında mikrofonu kapat | Bağlantı geri gelince mikrofon **kapalı kalır**, sekmede kayıt noktası yok |
+| R-09 | Kesinti öncesi mikrofon açık, kesintide dokunma | Bağlantı geri gelince ses aynı onaylı kişiye yeniden gider (kullanıcı kararı); yeni izin penceresi açılmaz |
+| R-10 | Kesinti sırasında hoparlörü kapat | Geri gelince hoparlör **kapalı kalır**, ses duyulmaz |
+| R-11 | Hoparlör kesintide açık kaldıysa | Geri gelince ses yeniden duyulur |
+| R-12 | Bağlantısı tamamen bitmiş kişi yeni istekle döner | Herkesin onayı gerekir |
+| R-13 | Art arda 3–4 kısa kesinti | Uygulama çalışmaya devam eder, katılımcı listesi doğru |
+| R-14 | Oyun sırasında (arka planda) kısa kesinti | Görüşme kendiliğinden toparlanır; gereksiz yere kimse çıkarılmaz |
+| R-15 | Görüşmeden ayrıldıktan sonra | Hiçbir yeniden bağlanma denemesi sürmez; "Sinyal: çevrimiçi" dışında durum değişmez |
+| R-16 | Sinyal sunucusuna erişilemiyor (ör. sadece WebSocket engelli ağ) | "Sinyal: yeniden bağlanıyor (n/8)", sonra "bağlanılamıyor" + "Yeniden dene"; mevcut görüşme sürer |
+
 ## Rapor şablonu
 
 Her test için bir satır doldur (kopyala-yapıştır):

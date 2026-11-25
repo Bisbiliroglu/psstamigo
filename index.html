@@ -15,6 +15,8 @@
       <h1>PsstAmigo <span class="version" id="app-version"></span></h1>
       <p class="motto">Connect. Talk. Play.</p>
       <p class="signal" id="signal-status" role="status" aria-live="polite">Sinyal: bağlanıyor…</p>
+      <button id="signal-retry" type="button" class="small" hidden>Yeniden dene</button>
+      <button id="signal-renew" type="button" class="small" hidden>Yeni UID al</button>
     </header>
 
     <main class="layout">
@@ -50,6 +52,7 @@
             <button id="invite-dismiss" type="button">Vazgeç</button>
           </div>
           <p id="notice" class="notice" role="alert" hidden></p>
+          <button id="rejoin-btn" type="button" class="primary wide" hidden>Görüşmeye yeniden katılma isteği gönder</button>
           <div id="requests" class="requests" aria-live="assertive"></div>
         </section>
       </aside>
@@ -80,6 +83,7 @@
           <button id="leave-btn" type="button" class="danger" disabled>Ayrıl</button>
         </div>
         <p id="audio-error" class="notice error" role="alert" hidden></p>
+        <p id="tx-warning" class="notice error" role="status" hidden>Mikrofon açık — sesin şu an kimseye ulaşmıyor (ses bağlantısı yok).</p>
         <p class="hint">Mikrofon ve hoparlör varsayılan olarak kapalıdır; açmak için tıkla. Çubuklar gerçek ses seviyesini gösterir.</p>
 
         <ul id="participants" class="participants" aria-label="Katılımcılar"></ul>

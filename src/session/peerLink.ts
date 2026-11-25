@@ -6,11 +6,26 @@
  * liveness (D-024), teardown, and the low-bandwidth encoder cap (D-020/D-025).
  * Membership and admission decisions stay in SessionController (the host).
  */
-import { LIMITS, LOW_BANDWIDTH_BITRATE_BPS, LOW_BANDWIDTH_THRESHOLD, TIMEOUTS } from "../core/config";
+import { LIMITS, LOW_BANDWIDTH_BITRATE_BPS, LOW_BANDWIDTH_THRESHOLD, MEDIA_RECOVERY, TIMEOUTS } from "../core/config";
 import type { DataLink, MediaLink } from "../signaling/types";
 import { BoundedSet } from "./admission";
 
-export type MediaStatus = "connecting" | "connected" | "interrupted" | "failed";
+export type MediaStatus = "connecting" | "connected" | "interrupted" | "recovering" | "failed";
+
+/** Media-only recovery bookkeeping (REC-007). Generations make every callback stale-safe. */
+export interface MediaRecoveryState {
+  /** True from the first media failure until success or exhaustion. */
+  active: boolean;
+  /** Attempts made (initiator) in the current recovery. */
+  attempt: number;
+  /** Generation of our latest request (initiator). */
+  gen: number;
+  /** Highest generation accepted from the peer (responder; older requests are ignored). */
+  seenGen: number;
+  /** Responder: generation whose replacement call we will accept. */
+  expecting: number | null;
+  timer: Timer | null;
+}
 export type Timer = ReturnType<typeof setTimeout>;
 
 /** Audio side effects, implemented by the app layer (keeps session free of Web Audio). */
@@ -48,6 +63,11 @@ export interface PeerLink {
   dataPc: RTCPeerConnection | null;
   dataListener: (() => void) | null;
   lostTimer: Timer | null;
+  /** Media stuck in ICE "disconnected" while the data link is healthy. */
+  stallTimer: Timer | null;
+  recovery: MediaRecoveryState;
+  /** Data link transport state for the UI ("ok" or "interrupted"). */
+  linkState: "ok" | "interrupted";
 }
 
 export function newPeerLink(peerId: string, name: string, data: DataLink): PeerLink {
@@ -69,7 +89,17 @@ export function newPeerLink(peerId: string, name: string, data: DataLink): PeerL
     dataPc: null,
     dataListener: null,
     lostTimer: null,
+    stallTimer: null,
+    recovery: { active: false, attempt: 0, gen: 0, seenGen: 0, expecting: null, timer: null },
+    linkState: "ok",
   };
+}
+
+/** True if the application data link of `p` currently has a working transport. */
+export function dataHealthy(p: PeerLink): boolean {
+  const pc = p.data.getPeerConnection();
+  if (!pc) return p.data.isOpen;
+  return p.data.isOpen && (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed");
 }
 
 export function label(p: { name: string; peerId: string }): string {
@@ -89,6 +119,8 @@ export interface PeerLinkHost {
   memberLost(p: PeerLink): void;
   /** A committed member's media failed (chat keeps working). */
   memberMediaFailed(p: PeerLink, text: string): void;
+  /** A committed member's replacement media connected (REC-007). */
+  memberMediaRecovered(p: PeerLink): void;
   dropLink(link: DataLink): void;
   changed(): void;
 }
@@ -117,15 +149,19 @@ export class PeerLinks {
       const update = (): void => {
         if (p.pc !== pc || !this.host.isTracked(p)) return;
         p.iceState = pc.iceConnectionState;
-        if (pc.connectionState === "failed" || pc.iceConnectionState === "failed") {
+        // "closed" here means the transport was closed under us (our own drops remove this listener first).
+        if (pc.connectionState === "failed" || pc.iceConnectionState === "failed" || pc.connectionState === "closed") {
           return this.failMedia(p, "Ses bağlantısı koptu veya kurulamadı (NAT/ağ kısıtı olabilir).");
         }
         if (p.mediaStatus === "failed") return;
         if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+          this.clearStall(p);
           if (p.mediaStatus !== "connected") {
+            const wasRecovering = p.committed && p.recovery.active;
             p.mediaStatus = "connected";
             if (p.mediaTimer) clearTimeout(p.mediaTimer);
             p.mediaTimer = null;
+            if (wasRecovering) this.host.memberMediaRecovered(p);
           }
           if (!p.committed && p.onReady) {
             const ready = p.onReady;
@@ -134,6 +170,16 @@ export class PeerLinks {
           }
         } else if (pc.iceConnectionState === "disconnected" && p.mediaStatus === "connected") {
           p.mediaStatus = "interrupted"; // never show "connected" while it is not
+          // Scenario B: give the same connection time to recover by itself; if the data link is fine
+          // but media stays stuck, treat it as failed so a replacement can be negotiated (REC-005/007).
+          if (p.committed && !p.stallTimer) {
+            p.stallTimer = setTimeout(() => {
+              p.stallTimer = null;
+              if (p.pc === pc && this.host.isMember(p) && pc.iceConnectionState === "disconnected" && dataHealthy(p)) {
+                this.failMedia(p, "Ses bağlantısı takıldı.");
+              }
+            }, MEDIA_RECOVERY.stallMs);
+          }
         }
         this.host.changed();
       };
@@ -162,17 +208,38 @@ export class PeerLinks {
       return this.host.pendingMediaFailed(p);
     }
     // Established member: media failure is NOT a departure; chat keeps working.
-    if (p.mediaStatus === "failed") return;
+    if (p.mediaStatus === "failed" && !p.media) return;
+    this.dropMedia(p);
     p.mediaStatus = "failed";
+    this.host.memberMediaFailed(p, text);
+  }
+
+  /**
+   * Releases only the media path of a committed member: sender detached from the mic, playback
+   * stopped, connection closed. Data link, membership and the shared capture are untouched.
+   */
+  dropMedia(p: PeerLink): void {
     if (p.mediaTimer) clearTimeout(p.mediaTimer);
     p.mediaTimer = null;
-    if (p.sender) this.host.media.removeSender(p.peerId, p.sender);
+    this.clearStall(p);
+    if (p.pc && p.pcListener) {
+      p.pc.removeEventListener("iceconnectionstatechange", p.pcListener);
+      p.pc.removeEventListener("connectionstatechange", p.pcListener);
+    }
+    p.pcListener = null;
+    p.pc = null;
+    if (p.sender && p.committed) this.host.media.removeSender(p.peerId, p.sender);
     p.sender = null;
-    this.host.media.removeRemoteStream(p.peerId);
+    if (p.committed) this.host.media.removeRemoteStream(p.peerId);
+    p.remoteStream = null;
     const media = p.media;
     p.media = null;
     media?.close();
-    this.host.memberMediaFailed(p, text);
+  }
+
+  private clearStall(p: PeerLink): void {
+    if (p.stallTimer) clearTimeout(p.stallTimer);
+    p.stallTimer = null;
   }
 
   /** Membership commit for one link (host already registered it as member): audio may flow now. */
@@ -202,6 +269,11 @@ export class PeerLinks {
     const check = (): void => {
       if (!this.host.isMember(p) || p.dataPc !== pc) return;
       const state = pc.iceConnectionState;
+      const linkState = state === "connected" || state === "completed" ? "ok" : "interrupted";
+      if (linkState !== p.linkState) {
+        p.linkState = linkState;
+        this.host.changed();
+      }
       if (state === "failed" || state === "closed") {
         this.host.memberLost(p);
       } else if (state === "disconnected") {
@@ -226,6 +298,9 @@ export class PeerLinks {
   teardown(p: PeerLink): void {
     if (p.mediaTimer) clearTimeout(p.mediaTimer);
     p.mediaTimer = null;
+    this.clearStall(p);
+    if (p.recovery.timer) clearTimeout(p.recovery.timer);
+    p.recovery = { active: false, attempt: 0, gen: p.recovery.gen, seenGen: p.recovery.seenGen, expecting: null, timer: null };
     if (p.lostTimer) clearTimeout(p.lostTimer);
     p.lostTimer = null;
     if (p.dataPc && p.dataListener) p.dataPc.removeEventListener("iceconnectionstatechange", p.dataListener);

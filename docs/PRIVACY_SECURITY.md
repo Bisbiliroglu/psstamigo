@@ -39,6 +39,19 @@ Privacy requirements are mandatory, not optional features. They apply to every t
   each peer only sends audio to peers it has committed itself, so no one receives audio without their own approval, but lists
   can differ until someone leaves. Convergence is PA-011.
 
+## Recovery privacy (PA-011)
+
+| Scenario | Behavior |
+|---|---|
+| A: signaling-only outage | Calls, mic and speaker untouched; only new joins are unavailable |
+| B: same connection recovers by itself | Same approved peer and connection; current mic/speaker state; anything turned off stays off |
+| C: replacement media connection | Authorization re-checked over the member's own data link; generation-checked; audio-only; no `getUserMedia`; current mic/speaker state (user decision D-029) |
+| Data link lost / removed by convergence | Sending, playback and chat for that peer stop; return only through a new unanimous admission |
+| Reload / restart | New UID; nothing restored; no persistent tokens |
+
+Residual: a malicious member can trigger another member's removal through false `member-sync` reports (denial of service only,
+D-030). Background tabs may delay recovery timers; they never cause a removal by themselves (decisions re-check ICE state).
+
 ## Security concepts (do not conflate)
 
 | Concept | Status in PsstAmigo |

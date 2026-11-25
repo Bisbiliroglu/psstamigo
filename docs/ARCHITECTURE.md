@@ -139,6 +139,25 @@ disconnected. A new authorized call after a failure starts a fresh setup window.
 `core/invite.ts` builds/parses `#join=<uid>`; `App` reads it once, removes it from the address bar and shows a confirmation banner.
 The request is sent only when the user clicks "İstek gönder".
 
+## Recovery (PA-011)
+
+```
+SIGNALING  online ─socket lost─► reconnecting(1..8, backoff+jitter) ─open─► online   (UID kept, calls untouched)
+                                      │ exhausted                      ▲ manual "Yeniden dene" / browser online
+                                      ▼                                │
+                                 unavailable ──────────────────────────┘   (UID taken ⇒ "Yeni UID al" only when idle)
+
+DATA LINK (authorization carrier)  ok ⇄ interrupted (ICE disconnected, ≤ 30 s) ─► lost ⇒ member removed (rejoin = new admission)
+MEDIA  connected ⇄ interrupted (same pc recovers, Scenario B)
+          │ ICE failed / closed / disconnected 20 s with healthy data link
+          ▼
+       recovering(1..3) ─media-recover ⇄ ok (data link)─► new silent call (lower UID) ─► connected (current mic/speaker state)
+          │ exhausted ⇒ failed ("mesajlaşma kullanılabilir")
+```
+
+Membership convergence (D-030): `member-sync` after membership changes → judged after 10 s → the newer side of any inconsistent
+pair is removed; nobody is added. Removed peers get an explicit "yeniden katılım" button.
+
 ## Startup guard
 
 `main.ts` refuses to start the app when the page is inside a frame (D-012): no signaling, no UID, no media.

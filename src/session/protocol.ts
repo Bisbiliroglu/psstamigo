@@ -47,6 +47,14 @@ export type ProtocolMessage =
   /** coordinator -> members and candidate: admission cancelled */
   | { t: "admit-abort"; v: 2; sid: string; aid: string; reason: RejectReason }
   | { t: "chat"; v: 2; sid: string; id: string; text: string }
+  /** PA-011 (additive; ignored by 0.1.x): request a replacement MediaConnection (REC-007) */
+  | { t: "media-recover"; v: 2; sid: string; gen: number }
+  | { t: "media-recover-ok"; v: 2; sid: string; gen: number }
+  /**
+   * PA-011 (additive): the sender's own committed member set (incl. itself) after a membership change,
+   * plus the candidate it is still connecting (if any). Used only to REMOVE peers (REC-010/011).
+   */
+  | { t: "member-sync"; v: 2; sid: string; members: string[]; pending: string | null }
   | { t: "leave"; v: 2; sid: string };
 
 export type MessageType = ProtocolMessage["t"];
@@ -77,6 +85,9 @@ const ALLOWED_KEYS: Record<MessageType, readonly string[]> = {
   "admit-commit": ["t", "v", "sid", "aid"],
   "admit-abort": ["t", "v", "sid", "aid", "reason"],
   chat: ["t", "v", "sid", "id", "text"],
+  "media-recover": ["t", "v", "sid", "gen"],
+  "media-recover-ok": ["t", "v", "sid", "gen"],
+  "member-sync": ["t", "v", "sid", "members", "pending"],
   leave: ["t", "v", "sid"],
 };
 
@@ -222,6 +233,19 @@ export function parseMessage(raw: unknown): ProtocolMessage | null {
     }
     case "leave":
       return hasSid() ? { t, v: 2, sid: sid as string } : null;
+    case "media-recover":
+    case "media-recover-ok": {
+      const gen = raw["gen"];
+      if (!hasSid() || typeof gen !== "number" || !Number.isInteger(gen) || gen < 1 || gen > 1_000_000) return null;
+      return { t, v: 2, sid: sid as string, gen };
+    }
+    case "member-sync": {
+      const members = parseUidList(raw["members"], MAX_PARTICIPANTS);
+      const pending = raw["pending"];
+      if (!hasSid() || members === null || members.length < 1) return null;
+      if (pending !== null && (!isValidUid(pending) || members.includes(pending))) return null;
+      return { t, v: 2, sid: sid as string, members, pending };
+    }
     default:
       return null;
   }

@@ -16,7 +16,7 @@
  * The joining party always initiates data + media links, so each pair has exactly one
  * application DataConnection and one MediaConnection (no duplicates, no glare).
  */
-import { LIMITS, MAX_PARTICIPANTS, TIMEOUTS } from "../core/config";
+import { LIMITS, MAX_PARTICIPANTS, MEDIA_RECOVERY, TIMEOUTS } from "../core/config";
 import { Emitter } from "../core/emitter";
 import { RateLimiter } from "../core/rateLimiter";
 import { isValidUid, normalizeUid } from "../core/uid";
@@ -25,6 +25,7 @@ import type { DataLink, MediaLink, Signaling } from "../signaling/types";
 import { BoundedSet, memberSnapshot, newMessageId, newSessionId, sameMembers } from "./admission";
 import {
   BandwidthMode,
+  dataHealthy,
   label,
   newPeerLink,
   PeerLinks,
@@ -52,6 +53,8 @@ export interface ParticipantView {
   readonly name: string;
   readonly media: MediaStatus;
   readonly iceState: string;
+  /** Application data link (chat + authorization) transport state. */
+  readonly link: "ok" | "interrupted";
 }
 
 export interface AdmissionView {
@@ -86,6 +89,8 @@ export interface SessionSnapshot {
   readonly lowBandwidth: boolean;
   /** True if the bitrate cap could not be applied to at least one sender (UI must not claim success). */
   readonly bandwidthLimitFailed: boolean;
+  /** After an involuntary session end: a member UID to send a NEW join request to (explicit click only, REC-014). */
+  readonly rejoinTarget: string | null;
 }
 
 export interface SessionDeps {
@@ -187,6 +192,14 @@ export class SessionController {
   private readonly events = new Emitter<{ change: SessionSnapshot }>();
   private readonly unsubscribers: Array<() => void> = [];
   private readonly bandwidth = new BandwidthMode();
+  /** Local commit order (lower = earlier) used only to decide which side of an inconsistent pair leaves (D-030). */
+  private readonly joinOrder = new Map<string, number>();
+  private selfSeq = 0;
+  private seqCounter = 0;
+  private rejoinTarget: string | null = null;
+  /** Latest member-sync per reporter, with our commit counter at arrival (D-030). */
+  private readonly latestSync = new Map<string, { members: Set<string>; pending: string | null; seqAt: number }>();
+  private syncTimer: Timer | null = null;
   private readonly links: PeerLinks;
   /**
    * A proposal received while our own admission was still connecting; it can only be judged
@@ -205,10 +218,8 @@ export class SessionController {
         if (this.joining?.links.get(p.peerId) === p) this.failJoining(REJECT_TEXT.failed, true);
       },
       memberLost: (p) => this.removeMember(p.peerId, `${label(p)} ile bağlantı koptu.`),
-      memberMediaFailed: (p, text) => {
-        this.chat.addSystem(`${label(p)}: ${text}`);
-        this.emit();
-      },
+      memberMediaFailed: (p, text) => this.onMemberMediaFailed(p, text),
+      memberMediaRecovered: (p) => this.onMemberMediaRecovered(p),
       dropLink: (link) => this.dropLink(link),
       changed: () => this.emit(),
     });
@@ -246,6 +257,7 @@ export class SessionController {
         name: p.name,
         media: p.mediaStatus,
         iceState: p.iceState,
+        link: p.linkState,
       })),
       incoming: adm
         ? [
@@ -269,6 +281,7 @@ export class SessionController {
       capacity: { count: this.members.size + 1, max: MAX_PARTICIPANTS },
       lowBandwidth: this.bandwidth.low,
       bandwidthLimitFailed: this.bandwidth.failed,
+      rejoinTarget: this.rejoinTarget,
     };
   }
 
@@ -553,6 +566,8 @@ export class SessionController {
       if (reason !== "declined" || text) this.notice = { kind: "info", text: message };
     }
     adm.early.length = 0; // never process anything a rolled-back candidate sent
+    // A rollback while connecting may mean others did commit the candidate: tell them our view (D-030).
+    if (adm.stage === "connecting" && this.members.size > 0) this.broadcastMemberSync();
     this.emit();
     this.flushDeferredProposal();
   }
@@ -575,6 +590,12 @@ export class SessionController {
         return;
       case "leave":
         return this.removeMember(member.peerId, `${label(member)} görüşmeden ayrıldı.`);
+      case "media-recover":
+        return this.handleMediaRecoverRequest(member, msg.gen);
+      case "media-recover-ok":
+        return this.handleMediaRecoverOk(member, msg.gen);
+      case "member-sync":
+        return this.handleMemberSync(member, msg.members, msg.pending);
       case "admit-propose":
         return this.handlePropose(member, msg);
       case "admit-vote":
@@ -746,6 +767,7 @@ export class SessionController {
       return this.setNotice("error", "Bağlantı başlatılamadı.");
     }
     this.register(link);
+    this.rejoinTarget = null;
     const j: Joining = {
       target,
       stage: "contacting",
@@ -862,7 +884,9 @@ export class SessionController {
     clearTimeout(j.timer);
     this.joining = null;
     this.sid = j.sid;
-    for (const pl of j.links.values()) this.commitLink(pl);
+    for (const pl of j.links.values()) this.commitLink(pl); // all existing members are older than us
+    this.selfSeq = ++this.seqCounter;
+    this.rejoinTarget = null;
     this.chat.addSystem("Görüşmeye katıldınız.");
     this.notice = null;
     for (const { from, msg } of j.early.splice(0)) {
@@ -900,6 +924,8 @@ export class SessionController {
   }
 
   private handleIncomingMedia(link: MediaLink): void {
+    const member = this.members.get(link.peerId);
+    if (!this.disposed && member && member.recovery.expecting !== null) return this.answerRecoveryCall(member, link);
     const adm = this.admission;
     const pl = adm?.candidateLink;
     // Only the candidate of an admission WE approved, only once, only while connecting.
@@ -930,6 +956,8 @@ export class SessionController {
 
   /** Membership commit for one link: only now audio may flow (respecting mic/speaker state). */
   private commitLink(p: PeerLink): void {
+    if (this.members.size === 0 && !this.joining) this.selfSeq = ++this.seqCounter; // we started this session
+    this.joinOrder.set(p.peerId, ++this.seqCounter);
     this.members.set(p.peerId, p);
     this.links.commit(p);
     this.applyBandwidthMode();
@@ -945,13 +973,19 @@ export class SessionController {
     const p = this.members.get(peerId);
     if (!p) return;
     this.members.delete(peerId);
+    this.joinOrder.delete(peerId);
     this.teardownLink(p);
     this.applyBandwidthMode();
     if (info) this.chat.addSystem(info);
     // Membership changed: any running admission no longer matches its approved snapshot.
     if (this.admission) this.abortAdmission(this.admission, "conflict");
-    if (this.members.size === 0) this.endSession(info);
-    else this.emit();
+    if (this.members.size === 0) {
+      this.rejoinTarget = peerId; // involuntary end: offer an explicit new join request (REC-014)
+      this.endSession(info);
+    } else {
+      this.broadcastMemberSync();
+      this.emit();
+    }
   }
 
   private applyBandwidthMode(): void {
@@ -963,12 +997,205 @@ export class SessionController {
 
   private endSession(info: string | null): void {
     this.sid = null;
+    if (this.syncTimer !== null) clearTimeout(this.syncTimer);
+    this.syncTimer = null;
+    this.latestSync.clear();
+    this.joinOrder.clear();
+    this.selfSeq = 0;
     this.deferredProposal = null;
     this.bandwidth.reset();
     this.chat.clear(); // ephemeral: history is gone when the session ends
     if (info) this.notice = { kind: "info", text: info };
     this.deps.media.sessionEnded();
     this.emit();
+  }
+
+  // ================================================================ media recovery (REC-007, D-029)
+
+  /** Deterministic initiator per pair (lower UID) so that only one replacement call is made. */
+  private isRecoveryInitiator(p: PeerLink): boolean {
+    return this.selfUid() < p.peerId;
+  }
+
+  private onMemberMediaFailed(p: PeerLink, text: string): void {
+    if (this.members.get(p.peerId) !== p) return;
+    if (!p.recovery.active) {
+      p.recovery.active = true;
+      p.recovery.attempt = 0;
+      this.chat.addSystem(`${label(p)}: ${text} Yeniden kuruluyor…`);
+    }
+    p.mediaStatus = "recovering";
+    // Responder: a closed attempt must not extend its watchdog; only new requests do.
+    if (this.isRecoveryInitiator(p) || !p.recovery.timer) this.scheduleMediaRecovery(p);
+    this.emit();
+  }
+
+  private scheduleMediaRecovery(p: PeerLink): void {
+    if (p.recovery.timer) clearTimeout(p.recovery.timer);
+    p.recovery.timer = null;
+    const delays = MEDIA_RECOVERY.delaysMs;
+    if (this.isRecoveryInitiator(p)) {
+      if (p.recovery.attempt >= delays.length) return this.giveUpMedia(p);
+      p.recovery.timer = setTimeout(() => this.attemptMediaRecovery(p), delays[p.recovery.attempt] ?? 0);
+    } else {
+      // Responder: wait for the next request; give up if none arrives within one full attempt window.
+      const budget = Math.max(...delays) + MEDIA_RECOVERY.attemptTimeoutMs + 5_000;
+      p.recovery.timer = setTimeout(() => {
+        p.recovery.timer = null;
+        if (this.members.get(p.peerId) === p && p.recovery.active) this.giveUpMedia(p);
+      }, budget);
+    }
+  }
+
+  private attemptMediaRecovery(p: PeerLink): void {
+    p.recovery.timer = null;
+    if (this.members.get(p.peerId) !== p || !this.sid || !p.recovery.active) return;
+    p.recovery.attempt += 1;
+    // Authorization is re-checked through the member's own data link; signaling carries the new offer.
+    if (!dataHealthy(p) || this.deps.signaling.state !== "online") return this.scheduleMediaRecovery(p);
+    const gen = ++p.recovery.gen;
+    p.data.send({ t: "media-recover", v: 2, sid: this.sid, gen } satisfies ProtocolMessage);
+    p.recovery.timer = setTimeout(() => {
+      p.recovery.timer = null;
+      if (this.members.get(p.peerId) !== p || p.recovery.gen !== gen || !p.recovery.active) return;
+      this.links.dropMedia(p); // this attempt did not connect in time
+      p.mediaStatus = "recovering";
+      this.scheduleMediaRecovery(p);
+      this.emit();
+    }, MEDIA_RECOVERY.attemptTimeoutMs);
+  }
+
+  private handleMediaRecoverRequest(p: PeerLink, gen: number): void {
+    if (this.isRecoveryInitiator(p) || gen <= p.recovery.seenGen || !this.sid) return; // wrong role or stale/replayed
+    p.recovery.seenGen = gen;
+    if (p.media) this.links.dropMedia(p); // our side may still believe the old path works
+    if (!p.recovery.active) {
+      p.recovery.active = true;
+      this.chat.addSystem(`${label(p)} ile ses yeniden kuruluyor…`);
+    }
+    p.mediaStatus = "recovering";
+    p.recovery.expecting = gen;
+    this.scheduleMediaRecovery(p); // re-arm the responder watchdog
+    p.data.send({ t: "media-recover-ok", v: 2, sid: this.sid, gen } satisfies ProtocolMessage);
+    this.emit();
+  }
+
+  private handleMediaRecoverOk(p: PeerLink, gen: number): void {
+    if (!this.isRecoveryInitiator(p) || gen !== p.recovery.gen || !p.recovery.active || p.media) return;
+    let silent: MediaStream;
+    let link: MediaLink;
+    try {
+      silent = this.deps.media.createSilentStream();
+      link = this.deps.signaling.call(p.peerId, silent);
+    } catch {
+      return; // the attempt timer schedules the next try
+    }
+    p.media = link;
+    // Committed member: sender gets the CURRENT mic state (null if muted), playback follows the speaker (D-029).
+    this.attachMedia(p, link, silent);
+    this.emit();
+  }
+
+  private answerRecoveryCall(p: PeerLink, link: MediaLink): void {
+    // Only the member we agreed with, only once per request, only audio (fail-closed, D-010).
+    if (p.media || link.offerVerdict !== "audio-only") {
+      link.close();
+      return;
+    }
+    p.recovery.expecting = null;
+    let silent: MediaStream;
+    try {
+      silent = this.deps.media.createSilentStream();
+      link.answer(silent);
+    } catch {
+      link.close();
+      return;
+    }
+    p.media = link;
+    this.attachMedia(p, link, silent);
+    this.emit();
+  }
+
+  private onMemberMediaRecovered(p: PeerLink): void {
+    if (p.recovery.timer) clearTimeout(p.recovery.timer);
+    p.recovery = { ...p.recovery, active: false, attempt: 0, expecting: null, timer: null };
+    this.applyBandwidthMode(); // the new sender gets the current bitrate profile (D-020)
+    this.chat.addSystem(`${label(p)} ile ses yeniden bağlandı.`);
+  }
+
+  private giveUpMedia(p: PeerLink): void {
+    if (p.recovery.timer) clearTimeout(p.recovery.timer);
+    p.recovery = { ...p.recovery, active: false, expecting: null, timer: null };
+    this.links.dropMedia(p);
+    p.mediaStatus = "failed";
+    this.chat.addSystem(`${label(p)} ile ses kurulamadı; mesajlaşma kullanılabilir.`);
+    this.emit();
+  }
+
+  // ================================================================ membership convergence (REC-010/011, D-030)
+
+  /** Tells every member our own committed set after a change. Used by others only to REMOVE peers. */
+  private broadcastMemberSync(): void {
+    if (!this.sid || this.members.size === 0) return;
+    const adm = this.admission;
+    const msg = {
+      t: "member-sync",
+      v: 2,
+      sid: this.sid,
+      members: memberSnapshot([this.selfUid(), ...this.members.keys()]),
+      pending: adm && adm.stage === "connecting" ? adm.candidate : null,
+    } satisfies ProtocolMessage;
+    for (const m of this.members.values()) m.data.send(msg);
+  }
+
+  /**
+   * Shrink-only reconciliation (D-030): if a member does not list someone we have (and is not still
+   * connecting them), that pair is not fully meshed, so the more recently joined of the two is
+   * removed. Nobody is ever ADDED from another peer's list (no approval is assumed). Reports are
+   * judged only after a grace period, against members that were already committed when they arrived.
+   */
+  private handleMemberSync(from: PeerLink, members: string[], pending: string | null): void {
+    if (!members.includes(from.peerId)) return;
+    this.latestSync.set(from.peerId, { members: new Set(members), pending, seqAt: this.seqCounter });
+    if (this.syncTimer === null) {
+      this.syncTimer = setTimeout(() => {
+        this.syncTimer = null;
+        this.evaluateMemberSync();
+      }, TIMEOUTS.memberSyncGraceMs);
+    }
+  }
+
+  private evaluateMemberSync(): void {
+    if (this.members.size === 0) return this.latestSync.clear();
+    const me = this.selfUid();
+    const order = (uid: string): number => (uid === me ? this.selfSeq : (this.joinOrder.get(uid) ?? Number.MAX_SAFE_INTEGER));
+    const evict = new Set<string>();
+    for (const [reporter, report] of this.latestSync) {
+      if (!this.members.has(reporter)) continue; // reporter already gone
+      for (const uid of [me, ...this.members.keys()]) {
+        if (uid === reporter || report.members.has(uid) || uid === report.pending) continue;
+        if (uid !== me && order(uid) > report.seqAt) continue; // committed after that report: not covered by it
+        evict.add(order(uid) > order(reporter) ? uid : reporter);
+      }
+    }
+    this.latestSync.clear();
+    if (evict.size === 0) return;
+    if (evict.has(me)) {
+      const target = [...this.members.keys()][0] ?? null;
+      this.leave();
+      this.rejoinTarget = target;
+      this.notice = {
+        kind: "error",
+        text: "Görüşmedeki herkesle bağlantın tamamlanamadığı için görüşmeden çıkarıldın. Yeniden katılım isteği gönderebilirsin.",
+      };
+      this.emit();
+      return;
+    }
+    for (const uid of evict) {
+      const m = this.members.get(uid);
+      if (!m) continue;
+      this.removeMember(uid, `${label(m)} herkesle bağlantı kuramadığı için görüşmeden çıkarıldı; yeniden katılım isteği gönderebilir.`);
+    }
   }
 
   // ================================================================ chat & leave
@@ -1001,6 +1228,7 @@ export class SessionController {
       this.members.delete(p.peerId);
       this.teardownLink(p);
     }
+    this.rejoinTarget = null;
     this.endSession("Görüşmeden ayrıldınız.");
   }
 

@@ -61,6 +61,26 @@ Status legend: ✅ implemented in spike · 🟡 partial · ⬜ not started
 
 All GR items: automated only; real-network verification pending (release gate).
 
+## Recovery requirements (PA-011)
+
+| ID | Requirement | Status (0.2.0) |
+|---|---|---|
+| REC-001 | Signaling-only interruption never ends healthy calls or changes mic/speaker | ✅ unit + e2e (socket closed) |
+| REC-002 | Bounded signaling reconnect: backoff, jitter, one loop, cancellation | ✅ unit |
+| REC-003 | Same UID while the page lives; never a silent UID change | ✅ unit + e2e |
+| REC-004 | Clear "unavailable" state and manual retry | ✅ unit; UI |
+| REC-005 | Temporary ICE interruption vs permanent loss distinguished (same-connection recovery, 20 s media stall, 30 s data loss) | ✅ unit |
+| REC-006 | ICE restart feasibility | ❌ not possible with PeerJS 1.5.5 (D-029); replacement connection instead |
+| REC-007 | Media-only recovery with re-validated authorization, no duplicate media, fail-closed SDP, no new capture | ✅ unit + e2e (simulated) |
+| REC-008 | Data link loss ⇒ authorization not verifiable ⇒ peer removed (no data-link replacement) | ✅ (D-024) |
+| REC-009 | Inconsistent membership detected | ✅ unit |
+| REC-010 | Reconciliation never adds peers or trusts others' approvals | ✅ unit |
+| REC-011 | Conservative convergence: uncertain newcomer removed, admissions blocked meanwhile | ✅ unit |
+| REC-012 | Coordinator stays a temporary role; its loss aborts only the admission | ✅ unit |
+| REC-013 | Same-session recovery keeps identity/authorization | ✅ unit |
+| REC-014 | Removed participant returns only through a new unanimous admission (explicit click) | ✅ unit |
+| REC-015 | Reload/restart: new UID, nothing restored | ✅ e2e (existing) |
+
 ## Privacy requirements
 
 PRIV-001 … PRIV-012 are defined in [PRIVACY_SECURITY.md](PRIVACY_SECURITY.md) and summarized in `CLAUDE.md`.
