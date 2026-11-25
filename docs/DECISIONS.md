@@ -58,3 +58,42 @@ LICENSE copyright holder: "PsstAmigo contributors".
 
 While requesting or in a session, incoming requests are rejected with `busy`. Two users requesting each other simultaneously
 both get `busy`; one retries. Group join flow is designed in PA-006.
+
+## D-010 — Fail-closed media offer audit (2026-11-25, PA-015 review)
+
+**Finding:** The PA-001 check `offerHasVideo` read PeerJS's non-public `options._payload` and treated an unreadable SDP as
+"no video" (fail-open).
+**Decision:** `signaling/sdpPolicy.ts` returns `audio-only | video | unreadable | invalid`; only `audio-only` is answered.
+Allowed: exactly one `audio` section plus at most one `application … webrtc-datachannel` section (PeerJS 1.5.5 adds this internal
+data channel to every media connection — observed in real offers). Remote video tracks are still rejected after answering.
+If PeerJS changes its internals, calls fail safely and e2e tests fail. Alternative if that happens: approach B (D-002).
+
+## D-011 — IP address exposure before acceptance is accepted and documented (2026-11-25, PA-015 review)
+
+PeerJS automatically negotiates every incoming data connection (ICE runs before the user accepts), so anyone who knows a UID can
+learn the target's public IP address. No audio, chat or display name of the target is shared before acceptance.
+Avoiding this would require relaying the request through signaling without a peer connection, which PeerJS Cloud does not offer
+(would need a custom signaling server — excluded by infrastructure constraints). Documented in README and PRIVACY_SECURITY.md.
+
+## D-012 — Refuse to run inside frames (2026-11-25, PA-015 review)
+
+`frame-ancestors` cannot be set via meta CSP and GitHub Pages cannot send `X-Frame-Options`. An embedding page could grant
+microphone permission to the frame and trick the user into clicking. The app shows a notice and does not start when framed.
+
+## D-013 — CI: deploy gate vs. browser tests (2026-11-25)
+
+Deploy workflow gates on type check, unit tests (incl. policy tests), production build and a production privacy check
+(noindex, CSP, no robots.txt/sitemap, no source maps). Browser tests run in a separate workflow (`browser-tests.yml`) because they
+depend on the public PeerJS Cloud; they are not retried and their result is reported separately. Only official GitHub actions;
+least-privilege permissions per job.
+
+## D-014 — Version 0.0.2 (2026-11-25)
+
+Security/privacy fixes from the PA-015 review change runtime behavior (offer audit, frame refusal, UI status). Bumped to `0.0.2`
+so testers can tell builds apart (version is shown in the header). No tag, no release.
+
+## D-015 — PA-015 brought forward as a test deployment; roadmap reorder approved (2026-11-25)
+
+The user approved the roadmap reordering proposed in PA-001 and moved PA-015 (GitHub Pages) before group sessions, **for testing
+only**. This is not a stable release and does not complete PA-001; real-device/network acceptance is still pending.
+PA-002…PA-005, PA-007, PA-008 are not marked DONE automatically.

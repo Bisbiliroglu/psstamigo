@@ -8,7 +8,7 @@ No accounts, no cameras, no screen sharing, no recordings.
 PsstAmigo is a hobby project for talking with friends while gaming. Open the page, share your temporary UID,
 your friend enters it, you accept — and you can talk and chat. It is not a Discord replacement and does not try to be.
 
-> **Status:** `0.0.1` — technical spike (PA-001). 1:1 calls only; group calls (up to 6) are planned. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** `0.0.2` — test deployment of the 1:1 prototype. Not a stable release. Group calls (up to 6) are planned. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## How it works
 
@@ -34,14 +34,16 @@ npm run typecheck
 npm test             # unit tests
 npx playwright install chromium   # once
 npm run test:e2e     # browser tests (needs internet for PeerJS Cloud)
+npm run test:e2e:preview   # same tests against the production build (with CSP)
 npm run build        # production build in dist/
 ```
 
 ## Deployment
 
-The app is a static build served from GitHub Pages under `/psstamigo/`
-(`vite.config.ts` → `base`). The workflow in `.github/workflows/deploy.yml` builds, tests and deploys on pushes to `main`
-once GitHub Pages is configured to use **GitHub Actions** as its source.
+Test deployment: https://bisbiliroglu.github.io/psstamigo/ (static build under `/psstamigo/`, see `vite.config.ts` → `base`).
+`.github/workflows/deploy.yml` type-checks, runs unit tests, builds, checks the production privacy settings and deploys on pushes
+to `main` (GitHub Pages source: **GitHub Actions**). Browser tests run separately in `.github/workflows/browser-tests.yml`.
+The app refuses to run inside frames.
 
 The page has `<meta name="robots" content="noindex, nofollow">` and a production Content-Security-Policy.
 **`noindex` is not access control:** anyone with the URL can open the site, and the public repository itself is indexable.
@@ -53,7 +55,9 @@ The page has `<meta name="robots" content="noindex, nofollow">` and a production
 - **PeerJS Cloud** is a free third-party service without a documented SLA, limits or terms. It can see UIDs, IP addresses
   and who connects to whom (connection metadata), not your audio or messages.
 - **Google public STUN** sees your public IP address.
-- **Participants learn each other's public IP addresses** (peer-to-peer).
+- **Participants learn each other's public IP addresses** (peer-to-peer). Because PeerJS negotiates the connection as soon as a
+  request arrives, **anyone who knows your UID can learn your public IP even before you accept** (no audio or chat is shared before
+  acceptance). Share your UID only with people you trust.
 - Audio and data are encrypted in transit by WebRTC (DTLS-SRTP / DTLS), but there is **no authenticated end-to-end identity
   verification**. A UID is not proof of who someone is.
 - The app cannot prevent other participants from recording on their own devices with external software.

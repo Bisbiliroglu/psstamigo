@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionController, type SessionMediaHooks } from "../../src/session/SessionController";
-import { TIMEOUTS } from "../../src/core/config";
+import { LIMITS, TIMEOUTS } from "../../src/core/config";
 import { FakeDataLink, FakeMediaLink, FakeSignaling, FakeStream, FakeTrack } from "./fakes";
 
 const ME = "psst-aaaa-aaaa-aaaa";
@@ -69,7 +69,7 @@ describe("SessionController authorization (PRIV-011)", () => {
     session.acceptRequest(session.snapshot().incoming[0]!.id);
     expect(session.snapshot().phase).toBe("active");
 
-    const video = new FakeMediaLink(BOB, true);
+    const video = new FakeMediaLink(BOB, "video");
     signaling.events.emit("incomingMedia", video);
     expect(video.closed).toBe(true);
     expect(video.answered).toBeNull();
@@ -202,7 +202,7 @@ describe("SessionController outgoing requests", () => {
   it("fails fast when the UID is unavailable", () => {
     const { session, signaling } = setup();
     session.requestJoin(BOB);
-    signaling.events.emit("error", { code: "peer-unavailable", message: "", fatal: false });
+    signaling.events.emit("error", { code: "peer-unavailable", message: "", fatal: false, peerId: BOB });
     expect(session.snapshot().phase).toBe("idle");
     expect(session.snapshot().notice?.kind).toBe("error");
   });
@@ -261,5 +261,78 @@ describe("SessionController chat and lifecycle", () => {
     ctx.session.acceptRequest(ctx.session.snapshot().incoming[0]!.id);
     vi.advanceTimersByTime(TIMEOUTS.mediaSetupMs + 1);
     expect(ctx.session.snapshot().participants[0]?.media).toBe("failed");
+  });
+});
+
+describe("SessionController review hardening (PA-015 review)", () => {
+  function accepted() {
+    const ctx = setup();
+    incomingRequest(ctx.signaling, BOB);
+    ctx.session.acceptRequest(ctx.session.snapshot().incoming[0]!.id);
+    return ctx;
+  }
+
+  it.each(["unreadable", "invalid", "video"] as const)(
+    "closes an accepted peer's %s offer without answering (fail-closed, B1)",
+    (verdict) => {
+      const { signaling, session, media } = accepted();
+      const call = new FakeMediaLink(BOB, verdict);
+      signaling.events.emit("incomingMedia", call);
+      expect(call.answered).toBeNull();
+      expect(call.closed).toBe(true);
+      expect(media.addSender).not.toHaveBeenCalled();
+      expect(session.snapshot().participants[0]?.media).toBe("failed");
+    },
+  );
+
+  it("an authorized audio-only call after a rejected offer can still connect", () => {
+    const { signaling, session } = accepted();
+    signaling.events.emit("incomingMedia", new FakeMediaLink(BOB, "unreadable"));
+    const call = new FakeMediaLink(BOB);
+    signaling.events.emit("incomingMedia", call);
+    expect(call.answered).not.toBeNull();
+    expect(session.snapshot().participants[0]?.media).toBe("connecting");
+    call.pc!.setIce("connected");
+    expect(session.snapshot().participants[0]?.media).toBe("connected");
+  });
+
+  it("shows an interruption instead of 'connected' while ICE is disconnected", () => {
+    const { signaling, session } = accepted();
+    const call = new FakeMediaLink(BOB);
+    signaling.events.emit("incomingMedia", call);
+    call.pc!.setIce("connected");
+    call.pc!.setIce("disconnected");
+    expect(session.snapshot().participants[0]?.media).toBe("interrupted");
+    call.pc!.setIce("connected");
+    expect(session.snapshot().participants[0]?.media).toBe("connected");
+    call.pc!.setIce("failed");
+    expect(session.snapshot().participants[0]?.media).toBe("failed");
+  });
+
+  it("a late peer-unavailable error for another UID does not fail the current request", () => {
+    const { session, signaling } = setup();
+    session.requestJoin(BOB);
+    signaling.events.emit("error", { code: "peer-unavailable", message: "", fatal: false, peerId: EVE });
+    expect(session.snapshot().phase).toBe("requesting");
+  });
+
+  it("bounds unidentified incoming handshakes and duplicates per peer", () => {
+    const { signaling } = setup();
+    const links: FakeDataLink[] = [];
+    for (let i = 0; i < LIMITS.unauthenticatedLinks + 1; i++) {
+      const link = new FakeDataLink(`psst-cccc-cccc-c${"23456789"[i]}cc`);
+      signaling.events.emit("incomingData", link);
+      links.push(link);
+    }
+    expect(links.slice(0, LIMITS.unauthenticatedLinks).every((l) => !l.closed)).toBe(true);
+    expect(links[LIMITS.unauthenticatedLinks]!.closed).toBe(true);
+
+    const fresh = setup();
+    const first = new FakeDataLink(BOB);
+    const second = new FakeDataLink(BOB);
+    fresh.signaling.events.emit("incomingData", first);
+    fresh.signaling.events.emit("incomingData", second);
+    expect(first.closed).toBe(false);
+    expect(second.closed).toBe(true);
   });
 });

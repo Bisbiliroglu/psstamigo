@@ -4,6 +4,16 @@ All notable user-facing changes. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### 0.0.2 — PA-015 review fixes (test deployment)
+
+- Security: incoming media offers are audited fail-closed; unreadable or non-audio offers are rejected without answering.
+- Security: the app refuses to run inside another page's frame (clickjacking protection).
+- Security: limits for unidentified incoming handshakes (max 5, one per peer).
+- Fix: participant voice status shows "ses kesintide…" during network interruptions instead of "ses bağlı".
+- Fix: a late "UID unavailable" error for an earlier target no longer cancels a new request.
+- CI: least-privilege deploy workflow with production privacy checks; separate browser-test workflow.
+- Docs: documented that a requester can learn your public IP before you accept (PeerJS limitation).
+
 ### Added (0.0.1 — technical spike, PA-001)
 
 - Temporary, cryptographically random UID per page load, with copy button.

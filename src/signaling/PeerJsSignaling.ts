@@ -6,6 +6,7 @@ import { Peer, type DataConnection, type MediaConnection, type PeerError } from 
 import { ICE_SERVERS, LIMITS, TIMEOUTS } from "../core/config";
 import { Emitter } from "../core/emitter";
 import { generateUid } from "../core/uid";
+import { auditOffer, type OfferVerdict } from "./sdpPolicy";
 import type { DataLink, MediaLink, Signaling, SignalingEvents, SignalingState } from "./types";
 
 class PeerJsDataLink implements DataLink {
@@ -49,18 +50,26 @@ class PeerJsDataLink implements DataLink {
   }
 }
 
-/** Reads the remote offer SDP of an incoming call (PeerJS keeps it in options._payload). */
-function readOfferSdp(call: MediaConnection): string {
-  const options = (call as unknown as { options?: { _payload?: { sdp?: { sdp?: unknown } } } }).options;
-  const sdp = options?._payload?.sdp?.sdp;
-  return typeof sdp === "string" ? sdp : "";
+/**
+ * Reads the remote offer description of an incoming call. PeerJS 1.5.5 keeps it in the
+ * non-public `options._payload.sdp`. If that internal shape changes, this returns
+ * undefined and auditOffer() reports "unreadable", so the call is rejected (fail-closed).
+ */
+function readOfferDescription(call: MediaConnection): unknown {
+  try {
+    const options = (call as unknown as { options?: { _payload?: { sdp?: unknown } } }).options;
+    return options?._payload?.sdp;
+  } catch {
+    return undefined;
+  }
 }
 
 class PeerJsMediaLink implements MediaLink {
-  readonly offerHasVideo: boolean;
+  readonly offerVerdict: OfferVerdict;
 
   constructor(private readonly call: MediaConnection, incoming: boolean) {
-    this.offerHasVideo = incoming ? /^m=video/m.test(readOfferSdp(call)) : false;
+    // Outgoing calls are created by us (audio-only silent stream), so they are audio-only by construction.
+    this.offerVerdict = incoming ? auditOffer(readOfferDescription(call)) : "audio-only";
   }
 
   get peerId(): string {
@@ -207,7 +216,12 @@ export class PeerJsSignaling implements Signaling {
         return;
       }
       if (fatal) this.setState("offline");
-      this.events.emit("error", { code, message: describePeerError(code), fatal: false });
+      this.events.emit("error", {
+        code,
+        message: describePeerError(code),
+        fatal: false,
+        peerId: code === "peer-unavailable" ? extractPeerId(err.message) : null,
+      });
     });
   }
 
@@ -217,7 +231,7 @@ export class PeerJsSignaling implements Signaling {
     this.peer = null;
     this.currentUid = null;
     this.setState("failed");
-    this.events.emit("error", { code, message, fatal: true });
+    this.events.emit("error", { code, message, fatal: true, peerId: null });
   }
 
   private clearOpenTimer(): void {
@@ -252,6 +266,13 @@ export class PeerJsSignaling implements Signaling {
     this.setState("offline");
     this.events.clear();
   }
+}
+
+/** PeerJS reports "Could not connect to peer <id>"; returns the id if it is present. */
+function extractPeerId(message: unknown): string | null {
+  if (typeof message !== "string") return null;
+  const match = /peer\s+(\S+)\s*$/.exec(message);
+  return match?.[1] ?? null;
 }
 
 function describePeerError(code: string): string {

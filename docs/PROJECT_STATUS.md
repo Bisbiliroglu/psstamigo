@@ -2,76 +2,87 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.0.1 |
-| Current branch | `main` (pushed to `origin`) |
+| Current version | 0.0.2 (working tree; **not committed**). Live site still serves 0.0.1. |
+| Current branch | `main` — local has uncommitted 0.0.2 review changes; `origin/main` = `d160d4d` (0.0.1) |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
-| Live site | https://bisbiliroglu.github.io/psstamigo/ (GitHub Pages, Actions source, HTTPS enforced) |
-| Current task | PA-001 — Project initialization and technical feasibility spike |
-| Task status | REVIEW (awaiting user review and manual tests) |
+| Test deployment | https://bisbiliroglu.github.io/psstamigo/ (GitHub Pages, Actions source, HTTPS enforced) |
+| Current task | PA-015 — PA-001 review & GitHub Pages **test** deployment (brought forward, D-015) |
+| Task status | Phases A–D done; **waiting at Phase E approval gate** (commit + push of 0.0.2) |
 | Last update | 2026-11-25 |
 
 ## Completed tasks
 
-- none yet accepted by the user
+- none accepted as DONE yet (PA-001 stays in REVIEW until manual/real-network tests pass)
 
 ## In progress
 
+- PA-015 — IN_PROGRESS (test deployment; 0.0.1 live, 0.0.2 ready)
 - PA-001 — REVIEW
 
 ## Pending
 
-PA-002 … PA-016 (see [ROADMAP.md](ROADMAP.md))
+PA-002 … PA-005, PA-007, PA-008: REVIEW* (core covered by spike, remaining criteria in [ROADMAP.md](ROADMAP.md)).
+PA-006, PA-009 … PA-014, PA-016: TODO.
 
-## Last verified build (2026-11-25, macOS, Node 26.13.1, npm 11.20.0)
+## Last verified build (2026-11-25, macOS, Node 26.13.1, npm 11.20.0, clean `npm ci`)
 
-- `npm run typecheck` → pass (strict; `tsconfig.json` for src, `tsconfig.node.json` for tests/config)
-- `vite build` → pass. `index.html` 2.12 KB, CSS 1.56 KB, JS 34.62 KB (gzip). CSP + noindex present in `dist/index.html`.
+- `npm audit`: 0 vulnerabilities (runtime: `peerjs@1.5.5` + 5 transitive packages)
+- `npm run typecheck`: pass
+- `vite build`: pass. Gzip sizes 0.0.2 vs 0.0.1:
+  - JS 35.17 KB (was 34.62, +0.55)
+  - CSS 1.58 KB (was 1.56, +0.02)
+  - HTML 2.11 KB (was 2.12)
+  - Total ≈ 38.86 KB (was ≈ 38.30)
+- Production build: no source maps, no robots.txt/sitemap, `noindex` + CSP present, asset paths under `/psstamigo/`.
 
 ## Last verified tests (2026-11-25)
 
-- Unit (Vitest 5.1.1): **73 / 73 passed** (5 files)
-- Browser integration (Playwright 1.65.1, Chromium, fake mic, real PeerJS Cloud): **7 / 7 passed**, 3 consecutive runs + 1 final run
-- GitHub Actions deploy run (typecheck, unit tests, build, deploy): **pass**
-- Live-site smoke test (Playwright, two Chromium contexts on one machine → `bisbiliroglu.github.io/psstamigo/`): **pass** — signaling online, request/accept, voice path connected, chat delivered, 0 console errors, CSP served
-- Manual / real network: **not run** (requires the user; see below)
+- Unit (Vitest): **100 / 100 passed** (6 files; was 73: +27 regression tests for review findings)
+- Browser integration, dev server: **8 / 8 passed** (was 7: +1 framed-page test; main flow gained CSP and STUN-only assertions)
+- Browser integration, production build with CSP (`vite preview`): **8 / 8 passed**
+- CSP negative check on production build: inline script blocked, fetch to another origin blocked
+  (eval blocking cannot be observed via DevTools-evaluated code; policy contains no `unsafe-eval`)
+- Live site (0.0.1) smoke test from PA-001: pass. **0.0.2 not deployed yet.**
+- Manual / real network: **not run**
 
 ## Manual test results
 
-| Scenario (TEST_PLAN §3) | Result |
-|---|---|
-| 3.1 Same computer, two windows (Chrome/Edge, real mic) | NOT RUN |
-| 3.2 Two computers, same LAN | NOT RUN |
-| 3.3 Two computers, different ISPs | NOT RUN |
-| 3.4 Home internet ↔ mobile hotspot | NOT RUN |
-| 3.5 Hotspot ↔ hotspot | NOT RUN |
-| 3.6 In-game background, 15+ min | NOT RUN |
-| 3.7 Tab close during call | NOT RUN |
+Checklist: [MANUAL_TESTS.md](MANUAL_TESTS.md). All scenarios: **NOT RUN**.
+
+| Area | IDs | Result |
+|---|---|---|
+| Network | N-01 … N-05 | NOT RUN |
+| Functional | B-01 … B-13 | NOT RUN |
+| Privacy | P-01 … P-12 | NOT RUN |
+| Gaming (Chrome & Edge, Windows) | G-01 … G-07 | NOT RUN |
 
 ## Known issues
 
-- 1:1 only. Incoming requests during a session (or while requesting) are rejected as `busy`; simultaneous mutual requests both fail.
-- No TURN: some NAT/CGNAT combinations (common on mobile networks) will not connect; the user sees an error.
-- Signaling loss: one bounded reconnect attempt only; full recovery is PA-011.
-- Speaking-indicator thresholds are untuned for real voices (fake device only).
-- Display name is not persisted (by design for now); it is sent only inside the join request/accept.
-- Diagnostics panel is basic and Turkish/English mixed in raw state values.
+- 1:1 only; requests during a session are rejected as `busy`; simultaneous mutual requests both fail (D-009).
+- No TURN: some NAT/CGNAT (esp. mobile) combinations cannot connect; an error is shown.
+- **A requester learns the target's public IP before acceptance** (PeerJS auto-negotiates data connections; D-011).
+- Signaling loss: one bounded reconnect only (PA-011).
+- Remote tab crash/kill may take up to ~30 s to be detected (data channel / ICE timeout).
+- Speaking-indicator thresholds untuned for real voices.
 
 ## Technical debt
 
-- Reading the incoming offer SDP relies on PeerJS internal `options._payload` (guarded; falls back to post-answer video track rejection).
-- `SessionController` contains 1:1 assumptions that PA-006 must generalize.
-- E2E tests depend on the public PeerJS Cloud (network flakiness possible).
-- Bundled `webrtc-adapter` contains unused `getDisplayMedia` shim code (never called; verified in e2e).
+- Offer audit relies on PeerJS internal `options._payload` (now fail-closed; a PeerJS change breaks calls safely, D-010).
+- `SessionController` 1:1 assumptions to generalize in PA-006.
+- E2E depends on public PeerJS Cloud.
+- Bundled `webrtc-adapter` contains unused `getDisplayMedia` shim; PeerJS feature detection creates one closed, never-negotiated
+  `RTCPeerConnection` with its default TURN config (verified harmless in e2e).
 
 ## User decisions
 
-- 2026-11-25: Project name PsstAmigo (was TalkyWalky); repo `psstamigo`; task prefix PA.
+- 2026-11-25: Project name PsstAmigo (final); repo `psstamigo`; task prefix PA.
 - 2026-11-25: Approved Phase 1 recommendations — STUN only (PeerJS default TURN disabled), approach A (D-002).
 - 2026-11-25: Public GitHub repo created by the user; leak prevention requested (noreply identity, no personal data).
-- 2026-11-25: Approved initial commit, push and GitHub Pages enablement.
+- 2026-11-25: Approved initial commit, push and GitHub Pages enablement (0.0.1 deployed).
+- 2026-11-25: Approved roadmap reordering; PA-015 brought forward as test deployment only (D-015).
 
 ## Next recommended task
 
-Site is live, so the user can now run manual tests 3.1–3.7 with friends over real networks.
-Then **PA-006 — P2P mesh group sessions (max 6)**. PA-015 (deployment) is effectively done for the spike; release
-hardening stays in PA-015/PA-016.
+1. User approval of Phase E: commit + push 0.0.2 (auto-deploys), then live smoke test.
+2. User runs [MANUAL_TESTS.md](MANUAL_TESTS.md) with friends; results recorded here.
+3. Then **PA-006 — P2P mesh group sessions (max 6)**.

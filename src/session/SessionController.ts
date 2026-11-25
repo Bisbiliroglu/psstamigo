@@ -23,7 +23,7 @@ import type { DataLink, MediaLink, Signaling } from "../signaling/types";
 import { parseMessage, sanitizeChatText, type ProtocolMessage, type RejectReason } from "./protocol";
 
 export type SessionPhase = "idle" | "requesting" | "active";
-export type MediaStatus = "connecting" | "connected" | "failed";
+export type MediaStatus = "connecting" | "connected" | "interrupted" | "failed";
 
 export interface ParticipantView {
   readonly peerId: string;
@@ -129,7 +129,8 @@ export class SessionController {
       s.on("incomingData", (link) => this.handleIncomingData(link)),
       s.on("incomingMedia", (link) => this.handleIncomingMedia(link)),
       s.on("error", (e) => {
-        if (e.code === "peer-unavailable" && this.outgoing) {
+        // Only fail the request the error is about (a late error for an older target must not fail a new one).
+        if (e.code === "peer-unavailable" && this.outgoing && (e.peerId === null || e.peerId === this.outgoing.peerId)) {
           this.failOutgoing("Bu UID şu anda çevrimiçi değil veya mevcut değil.");
         }
       }),
@@ -263,6 +264,9 @@ export class SessionController {
     if (this.disposed) return link.close();
     const peerId = link.peerId;
     if (!isValidUid(peerId) || peerId === this.deps.signaling.uid) return link.close();
+    // Bound handshakes that have not identified themselves yet (resource / spam protection).
+    if (this.unauthenticated.size >= LIMITS.unauthenticatedLinks) return link.close();
+    if ([...this.unauthenticated].some((l) => l.peerId === peerId)) return link.close();
 
     this.unauthenticated.add(link);
     const limiter = new RateLimiter(LIMITS.messagesPerWindow, LIMITS.rateWindowMs);
@@ -461,9 +465,15 @@ export class SessionController {
 
   private handleIncomingMedia(link: MediaLink): void {
     const p = this.participants.get(link.peerId);
-    // Only the accepted peer, only once, only audio. Everything else is closed unanswered.
-    if (this.disposed || this.phase !== "active" || !p || p.role !== "answerer" || p.media || link.offerHasVideo) {
+    // Only the accepted peer, only once. Everything else is closed unanswered.
+    if (this.disposed || this.phase !== "active" || !p || p.role !== "answerer" || p.media) {
       link.close();
+      return;
+    }
+    // Only a verifiably audio-only offer is answered (fail-closed: unreadable/invalid offers are rejected too).
+    if (link.offerVerdict !== "audio-only") {
+      link.close();
+      this.markMediaFailed(p, "Ses bağlantısı güvenlik denetiminden geçmedi ve reddedildi.");
       return;
     }
     let silent: MediaStream;
@@ -476,12 +486,20 @@ export class SessionController {
       return;
     }
     p.media = link;
+    // A new authorized call (e.g. after an earlier media failure) starts a fresh setup window.
+    p.mediaStatus = "connecting";
+    p.iceState = "new";
+    this.armMediaTimer(p);
     this.attachMedia(p, link, silent);
   }
 
   private attachMedia(p: Participant, link: MediaLink, silent: MediaStream): void {
     const pc = link.getPeerConnection();
     if (pc) {
+      if (p.pc && p.pcListener) {
+        p.pc.removeEventListener("iceconnectionstatechange", p.pcListener);
+        p.pc.removeEventListener("connectionstatechange", p.pcListener);
+      }
       p.pc = pc;
       const sender = pc.getSenders().find((s) => s.track?.kind === "audio") ?? null;
       if (sender) {
@@ -490,18 +508,23 @@ export class SessionController {
         this.deps.media.addSender(p.peerId, sender);
       }
       const update = (): void => {
-        if (this.participants.get(p.peerId) !== p) return;
+        // Ignore events from a previous (replaced) peer connection.
+        if (this.participants.get(p.peerId) !== p || p.pc !== pc) return;
         p.iceState = pc.iceConnectionState;
         if (pc.connectionState === "failed" || pc.iceConnectionState === "failed") {
           this.markMediaFailed(p, "Ses bağlantısı koptu veya kurulamadı (NAT/ağ kısıtı olabilir).");
           return;
         }
+        if (p.mediaStatus === "failed") return;
         if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
           if (p.mediaStatus !== "connected") {
             p.mediaStatus = "connected";
             if (p.mediaTimer) clearTimeout(p.mediaTimer);
             p.mediaTimer = null;
           }
+        } else if (pc.iceConnectionState === "disconnected" && p.mediaStatus === "connected") {
+          // Temporary network interruption: never keep showing "connected" while it is not.
+          p.mediaStatus = "interrupted";
         }
         this.emit();
       };

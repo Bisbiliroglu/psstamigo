@@ -13,11 +13,19 @@ Privacy requirements are mandatory, not optional features. They apply to every t
 | PRIV-005 | Background operation | No handler for `visibilitychange`/`blur` | e2e (synthetic events); real game test manual |
 | PRIV-006 | Fail-safe async | Generation counter in `MicrophoneController`; identity checks on every callback in `SessionController` | unit (disable/dispose during pending gUM), e2e (leave while mic starting) |
 | PRIV-007 | Safe reconnection | Reconnect is signaling-only; session end resets mic & speaker to off | unit (sessionEnded hook); full engine PA-011 |
-| PRIV-008 | No camera / screen | `video: false`; no `getDisplayMedia` in app code; video offers & tracks rejected | policy test, unit, e2e (`gdm == 0`, constraints) |
+| PRIV-008 | No camera / screen | `video: false`; no `getDisplayMedia` in app code; incoming offers pass a **fail-closed** SDP audit (`signaling/sdpPolicy.ts`): only exactly one audio section (+ at most PeerJS's one internal data channel) is answered; video, unreadable, invalid offers are closed unanswered; video tracks are rejected again after answering | policy test, unit (`sdpPolicy.test.ts`, session), e2e (`gdm == 0`, constraints) |
 | PRIV-009 | No recording | No `MediaRecorder`, no storage APIs in app code | policy test |
 | PRIV-010 | No tracking | No analytics, no external fonts/scripts; production CSP restricts connections to self + PeerJS Cloud | policy test, CSP in build |
-| PRIV-011 | Connection authorization | Media only for the accepted participant; schema validation, 2 KB size limit, rate limit (20 msgs / 5 s), max 3 pending requests, handshake timeout | unit |
+| PRIV-011 | Connection authorization | Media only for the accepted participant; schema validation, 2 KB size limit, rate limit (20 msgs / 5 s), max 3 pending requests, max 5 unidentified handshakes (1 per peer), handshake timeout | unit |
 | PRIV-012 | Honest claims | This document; README limitations | review |
+
+## Security concepts (do not conflate)
+
+| Concept | Status in PsstAmigo |
+|---|---|
+| **Transport encryption** | Yes. WebRTC always encrypts media (DTLS-SRTP) and data channels (DTLS). Network observers cannot read audio or chat. |
+| **Trusted signaling** | Assumed, not verified. DTLS certificate fingerprints are exchanged through PeerJS Cloud. Under normal operation PeerJS Cloud does not carry audio or messages, but a malicious or compromised signaling server could substitute fingerprints and sit in the middle. |
+| **Authenticated end-to-end identity** | **No.** There is no out-of-band fingerprint/safety-number check and no account system. A UID only addresses a browser tab; it does not prove who is behind it. |
 
 ## Threat model
 
@@ -39,8 +47,12 @@ Voice content, chat content, who talks to whom and when, IP addresses, the micro
 
 | Threat | Mitigation | Residual risk |
 |---|---|---|
-| Stranger guesses / learns a UID and calls | UID ≈ 59 bits random; every request needs explicit acceptance; no global directory | A known UID can still send request spam ⇒ rate/pending limits |
+| Stranger guesses / learns a UID and calls | UID ≈ 59 bits random; every request needs explicit acceptance; no global directory | A known UID can still send request spam ⇒ rate/pending/handshake limits |
+| **Requester learns your IP before you accept** | None possible with the current design: PeerJS answers every incoming *data* connection automatically, so ICE candidates (incl. your public IP via STUN) are exchanged when the request arrives, before you click Accept. No media or chat is exchanged before acceptance. | **Accepted, documented (D-011).** Share your UID only with people you would share your IP with. |
+| Clickjacking: a malicious page embeds PsstAmigo with `allow="microphone"` | App refuses to start when framed (`main.ts`) | Meta CSP cannot set `frame-ancestors`; GitHub Pages cannot send `X-Frame-Options` |
+| Pre-acceptance resource abuse (many handshakes, large binary chunks via PeerJS binary serializer) | Unidentified handshakes capped (5, one per peer) and time-limited; app messages size/rate-limited | PeerJS reassembles chunked binary data before our validation; a peer that knows your UID could waste memory/CPU until you reload |
 | Unaccepted peer sends a media offer | Closed unanswered unless from the accepted participant | — |
+| Offer cannot be inspected (PeerJS internal `options._payload` changes) | Fail-closed: verdict `unreadable` ⇒ closed unanswered; e2e tests would fail immediately | Calls stop working after such a PeerJS change until fixed (safe failure) |
 | Malicious peer sends malformed / huge / HTML messages | Strict schema, size limit, rate limit, `textContent` rendering, bidi/control char stripping | — |
 | Video offer to obtain camera | `video: false` always; video offers/tracks rejected | — |
 | Mic stays live after "off" | `stop()` + `replaceTrack(null)` + generation checks; e2e checks RTP stops | Browser/OS bugs are out of our control |
@@ -66,7 +78,33 @@ Voice content, chat content, who talks to whom and when, IP addresses, the micro
 - The bundled `webrtc-adapter` (PeerJS dependency) contains `getDisplayMedia` shim code. The app never calls it; the policy test
   covers app sources and the e2e test asserts it is never invoked.
 - PeerJS contains a built-in default TURN configuration (`*.turn.peerjs.com`). The app passes an explicit STUN-only
-  configuration, which replaces it (D-003).
+  configuration, which replaces it for every call/data connection (D-003). Verified in e2e: every peer connection that starts ICE
+  has only `stun:` servers.
+- PeerJS's load-time feature detection (`util.supports`) creates one temporary `RTCPeerConnection` with its default (TURN) config
+  and closes it immediately without `setLocalDescription`, so ICE gathering never starts and no TURN server is contacted.
+  The e2e probe asserts that this connection never negotiates.
+- PeerJS media connections include one internal data channel (used by PeerJS to signal close). It is allowed by the offer audit
+  and carries no application data.
+
+## Expected network connections (production)
+
+| Destination | Protocol | Purpose |
+|---|---|---|
+| `bisbiliroglu.github.io` (GitHub Pages) | HTTPS | static files (HTML, JS, CSS) |
+| `0.peerjs.com` | WSS (443) | signaling (allowed by CSP `connect-src`) |
+| `stun.l.google.com:19302` | UDP (STUN) | public address discovery (WebRTC, not governed by CSP) |
+| the other participant | UDP/TCP (WebRTC) | encrypted audio and data, peer-to-peer |
+
+Nothing else: no fonts, CDNs, analytics or telemetry. Production bundle contains no other URLs.
+
+## Content-Security-Policy (production, meta tag)
+
+`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'none'; form-action 'none'`
+
+- Verified on the production build: inline scripts and connections to other origins are blocked; no violations during a full call.
+- No `unsafe-inline`, no `unsafe-eval`, no wildcards.
+- **Not enforceable via meta CSP:** `frame-ancestors`, `report-uri`/`report-to`, `sandbox`. GitHub Pages cannot add headers, so
+  framing is handled by the app refusing to run when framed. WebRTC (STUN/peer traffic) is not restricted by CSP.
 
 ## Privacy acceptance criteria (every release)
 

@@ -1,6 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
+ * PSST_E2E_TARGET=preview runs the suite against the production build (with CSP)
+ * served by `vite preview`; the default is the Vite dev server.
+ */
+const preview = process.env["PSST_E2E_TARGET"] === "preview";
+const origin = preview ? "http://localhost:4173" : "http://localhost:5173";
+
+/**
  * Browser integration tests. They use the real PeerJS Cloud signaling server,
  * so an internet connection is required. Microphone input is a Chromium fake device;
  * no real microphone is ever captured by the test suite.
@@ -14,7 +21,7 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   use: {
-    baseURL: "http://localhost:5173/psstamigo/",
+    baseURL: `${origin}/psstamigo/`,
     trace: "off",
   },
   projects: [
@@ -29,9 +36,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:5173/psstamigo/",
-    reuseExistingServer: true,
-    timeout: 60_000,
+    command: preview ? "npx vite build && npx vite preview --port 4173 --strictPort" : "npm run dev",
+    url: `${origin}/psstamigo/`,
+    reuseExistingServer: !preview,
+    timeout: 120_000,
   },
 });

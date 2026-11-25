@@ -34,7 +34,12 @@ const SIGNAL_TEXT: Record<SignalingState, string> = {
   failed: "Sinyal: başarısız",
 };
 
-const MEDIA_TEXT = { connecting: "ses kuruluyor…", connected: "ses bağlı", failed: "ses yok" } as const;
+const MEDIA_TEXT = {
+  connecting: "ses kuruluyor…",
+  connected: "ses bağlı",
+  interrupted: "ses kesintide…",
+  failed: "ses yok",
+} as const;
 
 export class View {
   private readonly signal = el<HTMLParagraphElement>("signal-status");

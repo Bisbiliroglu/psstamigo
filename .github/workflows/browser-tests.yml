@@ -1,0 +1,33 @@
+# Browser integration tests (Playwright, Chromium, fake microphone).
+# They use the public PeerJS Cloud signaling server, so transient network failures are
+# possible. No retries: a failure is reported as a failure. This workflow does not gate
+# deployment; its result must be checked and reported separately.
+name: Browser integration tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test

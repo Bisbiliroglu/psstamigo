@@ -1,6 +1,7 @@
 /** Minimal fakes for WebRTC / media objects in a Node test environment. */
 import type { DataLink, MediaLink, Signaling, SignalingEvents, SignalingState } from "../../src/signaling/types";
 import { Emitter } from "../../src/core/emitter";
+import type { OfferVerdict } from "../../src/signaling/sdpPolicy";
 
 export class FakeTrack {
   readyState: "live" | "ended" = "live";
@@ -116,7 +117,7 @@ export class FakeMediaLink implements MediaLink {
   private closeCbs: Array<() => void> = [];
   constructor(
     public readonly peerId: string,
-    public readonly offerHasVideo = false,
+    public readonly offerVerdict: OfferVerdict = "audio-only",
     outgoingStream: MediaStream | null = null,
   ) {
     if (outgoingStream) this.pc = makePc(outgoingStream);
@@ -166,7 +167,7 @@ export class FakeSignaling implements Signaling {
     return link;
   }
   call(peerId: string, stream: MediaStream): MediaLink {
-    const link = new FakeMediaLink(peerId, false, stream);
+    const link = new FakeMediaLink(peerId, "audio-only", stream);
     this.calls.push(link);
     return link;
   }

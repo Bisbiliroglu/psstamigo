@@ -70,5 +70,6 @@ npm run dev        # http://localhost:5173/psstamigo/
 npm run typecheck
 npm test           # unit tests (Vitest)
 npm run test:e2e   # browser tests (Playwright, needs internet: PeerJS Cloud)
+npm run test:e2e:preview  # browser tests against the production build (CSP)
 npm run build      # typecheck + production build to dist/
 ```

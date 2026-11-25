@@ -32,6 +32,8 @@ export const TIMEOUTS = {
 export const LIMITS = {
   /** Max UID collision retries before reporting a fatal error. */
   uidRetries: 3,
+  /** Max incoming data links that have not yet sent a valid join request. */
+  unauthenticatedLinks: 5,
   /** Max simultaneous pending incoming requests. Extra requests are rejected as busy. */
   pendingRequests: 3,
   /** Max display name length (characters). */

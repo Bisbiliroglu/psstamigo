@@ -1,6 +1,7 @@
-# Builds, tests and deploys to GitHub Pages.
-# Requires: repository Settings → Pages → Source = "GitHub Actions".
-# Enabling Pages / pushing to main is a user decision (see CLAUDE.md).
+# Builds, verifies and deploys the static site to GitHub Pages.
+# Required gate: type check, unit tests (incl. privacy policy checks), production build.
+# Browser integration tests run separately (browser-tests.yml) because they depend on
+# the public PeerJS Cloud and must not be hidden or silently retried here.
 name: Deploy to GitHub Pages
 
 on:
@@ -8,20 +9,21 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -30,6 +32,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npx vite build
+      - name: Verify production privacy configuration
+        run: |
+          grep -q '<meta name="robots" content="noindex, nofollow"' dist/index.html
+          grep -q 'http-equiv="Content-Security-Policy"' dist/index.html
+          test ! -e dist/robots.txt
+          test ! -e dist/sitemap.xml
+          test -z "$(find dist -name '*.map')"
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
@@ -37,6 +46,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

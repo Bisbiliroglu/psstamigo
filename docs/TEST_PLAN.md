@@ -10,7 +10,8 @@ Automated and manual results are reported separately. Manual / real-network test
 | `tests/unit/protocol.test.ts` | schema validation, malformed/oversized/prototype input, control & bidi characters |
 | `tests/unit/audio.test.ts` | mic off by default, audio-only constraints, real shutdown, re-enable, stale gUM races, device-ended fallback; speaker default off, disable, new participant |
 | `tests/unit/session.test.ts` | authorization (no media before accept, stranger/duplicate/video calls closed), handshake & request timeouts, busy, outgoing flow, reject, unavailable UID, chat rate limit, leave & dispose |
-| `tests/unit/policy.test.ts` | static privacy checks on app sources, PeerJS import boundary, noindex |
+| `tests/unit/policy.test.ts` | static privacy checks on app sources (incl. no track `clone()`, no TURN), PeerJS import boundary, STUN-only config, noindex |
+| `tests/unit/sdpPolicy.test.ts` | fail-closed offer audit: audio-only (+PeerJS data channel) accepted; video, unreadable, invalid, oversized rejected |
 
 ## 2. Browser integration tests (Playwright, Chromium) — `npm run test:e2e`
 
@@ -26,10 +27,20 @@ An init script observes `getUserMedia`, `RTCPeerConnection` and media playback w
 | mic denied | error shown, chat works, can still receive audio |
 | leave while mic starting | late capture stopped, nothing attached |
 | reload | new UID, other side returns to idle |
+| framed page | app refuses to start inside an iframe (no UID, no signaling socket) |
+
+The main flow additionally asserts: no CSP violations, and every peer connection that starts ICE is STUN-only
+(PeerJS's load-time feature-detection connection never negotiates).
+
+Run against the dev server (`npm run test:e2e`) or the production build with CSP (`npm run test:e2e:preview`).
+CI runs the dev-server variant in `browser-tests.yml` (separate from the deploy gate, no retries).
 
 Limits: Chromium only (not Edge/Windows), loopback network (host candidates), fake device, synthetic background events.
 
 ## 3. Manual tests (user)
+
+The Turkish step-by-step checklist and report template for testers is in [MANUAL_TESTS.md](MANUAL_TESTS.md).
+Summary of scenarios:
 
 Open the site (dev: `npm run dev` → `http://localhost:5173/psstamigo/`; deployed: GitHub Pages URL) in **Chrome or Edge**.
 

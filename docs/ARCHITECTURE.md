@@ -58,7 +58,8 @@ Incoming requests while `requesting` or `active` are rejected as `busy` (group s
 3. **Authorization**: target shows the request. Nothing else happens until the user clicks.
 4. **Accept**: target sends `join-accept`. Both sides now treat each other as participants.
 5. **Media**: the requester calls `peer.call(target, silentStream)`; the target answers only if the caller is the accepted
-   participant, there is no existing call, and the offer has no video m-line.
+   participant, there is no existing call, and the fail-closed offer audit (`signaling/sdpPolicy.ts`, D-010) returns
+   `audio-only`. Unreadable, invalid or video offers are closed unanswered.
 6. **Mic attach**: each side hands its audio `RTCRtpSender` to `MicrophoneController`, which immediately sets
    `replaceTrack(null)` (mic off) or the live track (mic on). The synthetic silent track is stopped.
 7. **Remote audio**: the remote stream goes to `SpeakerController`, which plays it only when the speaker is enabled.
@@ -97,6 +98,22 @@ The remote side detects the closed data channel; the UID stays on PeerJS Cloud u
 - Control & chat: WebRTC DataChannel (DTLS), JSON, validated by `session/protocol.ts`.
 - Voice: WebRTC SRTP (DTLS-SRTP), Opus (browser default).
 - Diagnostics: local `getStats()` only, polled every 2 s and only while the diagnostics panel is open.
+
+## Media status shown in the UI
+
+`connecting` (setup window, 20 s) → `connected` (ICE connected/completed) ⇄ `interrupted` (ICE disconnected, shown as
+"ses kesintide…") → `failed` (ICE failed, timeout, rejected offer, media closed). The UI never shows "connected" while ICE is
+disconnected. A new authorized call after a failure starts a fresh setup window.
+
+## Startup guard
+
+`main.ts` refuses to start the app when the page is inside a frame (D-012): no signaling, no UID, no media.
+
+## CI / deployment
+
+- `.github/workflows/deploy.yml`: `npm ci` → type check → unit tests → `vite build` → production privacy check → Pages artifact → deploy.
+- `.github/workflows/browser-tests.yml`: Playwright e2e against the dev server (separate, not gating deploy).
+- Locally: `npm run test:e2e:preview` runs the e2e suite against the production build (with CSP) via `vite preview`.
 
 ## Error handling
 

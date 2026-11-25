@@ -3,6 +3,8 @@
  * PeerJS is confined to PeerJsSignaling.ts (dependency inversion, see ARCHITECTURE.md).
  */
 
+import type { OfferVerdict } from "./sdpPolicy";
+
 export type SignalingState = "connecting" | "online" | "offline" | "failed";
 
 export interface DataLink {
@@ -18,8 +20,11 @@ export interface DataLink {
 
 export interface MediaLink {
   readonly peerId: string;
-  /** True if the remote offer contained a video m-line (audio-only policy, PRIV-008). */
-  readonly offerHasVideo: boolean;
+  /**
+   * Fail-closed audit of the remote offer (PRIV-008, PRIV-011). Only "audio-only"
+   * may be answered; video, unreadable or invalid offers must be closed unanswered.
+   */
+  readonly offerVerdict: OfferVerdict;
   /** Answer an incoming call. Only called after session authorization. */
   answer(stream: MediaStream): void;
   /** Underlying peer connection; available after call()/answer(). */
@@ -36,7 +41,8 @@ export interface SignalingEvents {
   open: string;
   incomingData: DataLink;
   incomingMedia: MediaLink;
-  error: { code: string; message: string; fatal: boolean };
+  /** peerId is set when the error concerns a specific remote peer (e.g. peer-unavailable). */
+  error: { code: string; message: string; fatal: boolean; peerId: string | null };
 }
 
 export interface Signaling {

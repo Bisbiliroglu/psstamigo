@@ -1,7 +1,7 @@
 {
   "name": "psstamigo",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A lightweight, privacy-focused, peer-to-peer voice and text communication application. No accounts, no cameras, no screen sharing, no recordings.",
   "license": "MIT",
   "type": "module",
@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:preview": "PSST_E2E_TARGET=preview playwright test",
     "check": "npm run typecheck && npm run test && vite build"
   },
   "dependencies": {

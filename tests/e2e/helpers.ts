@@ -17,9 +17,24 @@ function installProbe(opts: ProbeOptions): void {
     constraints: string[];
     tracks: MediaStreamTrack[];
     pcs: RTCPeerConnection[];
+    /** Peer connections that started ICE (setLocalDescription was called). */
+    negotiated: RTCPeerConnection[];
     players: HTMLMediaElement[];
+    cspViolations: string[];
   };
-  const probe: Probe = { gum: 0, gdm: 0, constraints: [], tracks: [], pcs: [], players: [] };
+  const probe: Probe = {
+    gum: 0,
+    gdm: 0,
+    constraints: [],
+    tracks: [],
+    pcs: [],
+    negotiated: [],
+    players: [],
+    cspViolations: [],
+  };
+  document.addEventListener("securitypolicyviolation", (e) => {
+    probe.cspViolations.push(`${e.effectiveDirective} ${e.blockedURI}`);
+  });
   (window as unknown as { __probe: Probe }).__probe = probe;
 
   const md = navigator.mediaDevices;
@@ -46,6 +61,11 @@ function installProbe(opts: ProbeOptions): void {
       probe.pcs.push(this);
     }
   } as typeof RTCPeerConnection;
+  const originalSld = OriginalPC.prototype.setLocalDescription;
+  OriginalPC.prototype.setLocalDescription = function (this: RTCPeerConnection, ...args: unknown[]) {
+    if (!probe.negotiated.includes(this)) probe.negotiated.push(this);
+    return (originalSld as (...a: unknown[]) => Promise<void>).apply(this, args);
+  } as typeof originalSld;
   const originalPlay = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
     if (!probe.players.includes(this)) probe.players.push(this);
@@ -85,6 +105,11 @@ export interface ProbeState {
   sendersWithTrack: number;
   playing: number;
   openPcs: number;
+  /** ICE server URLs of every peer connection that started ICE gathering. */
+  iceUrls: string[];
+  /** ICE server URLs of peer connections that never started ICE (e.g. PeerJS feature detection). */
+  idleIceUrls: string[];
+  cspViolations: string[];
 }
 
 export async function probe(page: Page): Promise<ProbeState> {
@@ -96,9 +121,15 @@ export async function probe(page: Page): Promise<ProbeState> {
         constraints: string[];
         tracks: MediaStreamTrack[];
         pcs: RTCPeerConnection[];
+        negotiated: RTCPeerConnection[];
         players: HTMLMediaElement[];
+        cspViolations: string[];
       };
     }).__probe;
+    const urlsOf = (list: RTCPeerConnection[]): string[] =>
+      list.flatMap((pc) =>
+        (pc.getConfiguration().iceServers ?? []).flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls])),
+      );
     const open = p.pcs.filter((pc) => pc.signalingState !== "closed");
     const senders = open.flatMap((pc) => pc.getSenders());
     return {
@@ -111,6 +142,9 @@ export async function probe(page: Page): Promise<ProbeState> {
       sendersWithTrack: senders.filter((s) => s.track !== null).length,
       playing: p.players.filter((m) => !m.paused && m.srcObject !== null).length,
       openPcs: open.length,
+      iceUrls: urlsOf(p.negotiated),
+      idleIceUrls: urlsOf(p.pcs.filter((pc) => !p.negotiated.includes(pc))),
+      cspViolations: p.cspViolations,
     };
   });
 }

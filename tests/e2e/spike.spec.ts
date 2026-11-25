@@ -129,7 +129,17 @@ test("request, accept, chat, real mic on/off, speaker on/off, leave", async ({ b
   expect((await probe(a)).playing).toBe(0);
   expect(await uidOf(b)).toBe(bUid);
 
-  for (const p of [a, b]) expect((await probe(p)).gdm).toBe(0);
+  for (const p of [a, b]) {
+    const s = await probe(p);
+    expect(s.gdm).toBe(0);
+    // D-003: every peer connection that gathers ICE candidates is STUN only.
+    expect(s.iceUrls.length).toBeGreaterThan(0);
+    expect(s.iceUrls.filter((u) => !u.startsWith("stun:"))).toEqual([]);
+    // PeerJS's load-time feature detection creates (and closes) one connection with its default
+    // TURN config; it must never start ICE. Any other non-STUN config is a regression.
+    expect(s.cspViolations).toEqual([]);
+    expect(s.idleIceUrls.filter((u) => !u.startsWith("stun:")).every((u) => u.includes(".turn.peerjs.com"))).toBe(true);
+  }
   await A.context.close();
   await B.context.close();
 });
@@ -207,4 +217,20 @@ test("reload ends the call and yields a new UID", async ({ browser }) => {
   await expect(A.page.locator("#session-status")).toHaveText("Aktif görüşme yok.", { timeout: 30_000 });
   await A.context.close();
   await B.context.close();
+});
+
+test("refuses to run inside a frame (clickjacking protection)", async ({ browser, baseURL }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const sockets: string[] = [];
+  page.on("websocket", (ws) => sockets.push(ws.url()));
+  await page.setContent(
+    `<iframe allow="microphone" src="${baseURL}" width="800" height="600"></iframe>`,
+  );
+  const frame = page.frameLocator("iframe");
+  await expect(frame.locator("[role=alert]")).toContainText("başka bir sayfanın içinde çalıştırılamaz");
+  await expect(frame.locator("#my-uid")).toHaveCount(0);
+  await page.waitForTimeout(1_500);
+  expect(sockets.filter((u) => u.includes("peerjs"))).toEqual([]);
+  await context.close();
 });
