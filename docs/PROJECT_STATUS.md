@@ -2,12 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Current version | 0.1.0 (local working tree, **not committed, not deployed**). Live site serves 0.0.2. |
-| Current branch | `main`; `origin/main` = `aca8bba` (0.0.2) |
+| Current version | 0.1.0 (deployed as test build) |
+| Current branch | `main` = `origin/main` (PA-006 commit `5308393` + this status update) |
 | Remote | `git@github.com:Bisbiliroglu/psstamigo.git` (public) |
-| Test deployment | https://bisbiliroglu.github.io/psstamigo/ (0.0.2) |
+| Test deployment | https://bisbiliroglu.github.io/psstamigo/ (0.1.0) |
 | Current task | PA-006 — group mesh (max 10) + user requests: invite links, low-bandwidth mode, compact layout |
-| Task status | REVIEW — implemented and verified locally (dev + production preview); waiting for review and deploy approval |
+| Task status | REVIEW — deployed and verified live; manual group tests pending |
 | Last update | 2026-11-25 |
 
 ## Completed tasks
@@ -17,7 +17,7 @@
 ## In progress / review
 
 - PA-006 — REVIEW (0.1.0)
-- PA-015 — REVIEW (0.0.2 live; 0.1.0 not deployed)
+- PA-015 — REVIEW (0.1.0 live)
 - PA-001 … PA-005, PA-007, PA-008 — REVIEW (see ROADMAP remaining criteria)
 
 ## Last verified build (2026-11-25, macOS, Node 26.13.1)
@@ -41,7 +41,12 @@
     The same test then passed **6 times in a row** (5 isolated reruns + preview suite). Classified as **flaky under load**
     (10–11 browser contexts with up to 18 peer connections each on one machine); not hidden, tracked as known issue.
   - Earlier dev full run in this task: 12 / 12 passed.
-- Not run: GitHub Actions for 0.1.0 (no push), live smoke test (not deployed), manual tests.
+- GitHub Actions on `5308393`: deploy workflow (typecheck, unit, build, privacy checks, deploy) **success**;
+  browser-test workflow **12 / 12 passed** (incl. the 10-person test).
+- Live smoke test 0.1.0 (three Chromium contexts → https://bisbiliroglu.github.io/psstamigo/): **pass** — header `v0.1.0`,
+  invite-link join, C joins via B with both approvals, 3-way voice path connected, group chat, departures down to idle.
+  Live bundle hash equals local build (`index-DFl7mv5U.js`); `noindex` and CSP served.
+- Manual tests for 0.1.0: **not run**.
 
 ## Manual test results
 
@@ -102,11 +107,11 @@ Remaining real-network tests (N-03 … N-05, G-xx on Windows Chrome/Edge) are ke
 - 2026-11-25: Approved initial commit, push and GitHub Pages enablement (0.0.1 deployed).
 - 2026-11-25: Approved roadmap reordering; PA-015 brought forward as test deployment only (D-015).
 - 2026-11-25: Approved commit + push of 0.0.2 review fixes (deployed).
+- 2026-11-25: Approved commit + push + deployment of 0.1.0.
 - 2026-11-25: Approved PA-006 plan (Phase A). During implementation requested: max **10** participants (D-019),
   low-bandwidth mode above 5 (D-020), invite link button (D-021), compact layout and nicer level animation (D-022).
 
 ## Next recommended task
 
-1. User reviews 0.1.0 locally or approves commit + push (auto-deploys 0.1.0 to GitHub Pages), then live smoke test.
-2. Group manual tests ([MANUAL_TESTS.md](MANUAL_TESTS.md) sections E–G) and the pending real-network tests (release gate).
-3. Then PA-011 (reconnection / crashed-peer detection) or PA-009 (audio settings, per-participant volume).
+1. Group manual tests ([MANUAL_TESTS.md](MANUAL_TESTS.md) sections E–G) and the pending real-network tests (release gate).
+2. Then PA-011 (reconnection / crashed-peer detection) or PA-009 (audio settings, per-participant volume).
